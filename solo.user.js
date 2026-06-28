@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SevTech Fuel QR — ОДИН НОМЕР (ручной ввод в панели)
 // @namespace    sevtech-fuel
-// @version      3.9.0-solo
+// @version      3.10.0-solo
 // @description  Упрощённая версия под ОДНУ машину в НИЗКОМ ПРОФИЛЕ (палят автоматику — ведём себя как живой человек): госномер вводится ПРЯМО в панели скрипта (поле + живая плашка РФ), топливо кнопками по приоритету, неровный опрос ~раз в секунду (джиттер). Когда нужное топливо появилось — берёт QR без долбилова: 1 последовательный воркер /create (без параллельных залпов), человеческие паузы, /create стартует сразу (T+0), /plate/check крутится параллельно и не блокирует. Тихая авто-реавторизация MAX (0 тапов), сам грузит MAX SDK. Детект «код уже есть»/кулдаун/блок. Защита «✏️» от прерывания захвата. Лог + «💾 лог». Без базы и мульти-номера. Ставка на тайминг и живую сессию, а не на объём запросов. // v3.8.2: низкий профиль (1 воркер, джиттер, паузы) по просьбе — чтобы не палиться.
 // @match        https://fuel.sevtech.org/*
 // @run-at       document-idle
@@ -241,6 +241,93 @@
     fetch(base + '/e', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body })
       .then((r) => r.json()).then((d) => log('TG', 'доставка → ' + (d && d.ok ? 'ok' : 'fail')))
       .catch((e) => log('TG', 'доставка ошибка: ' + (e && e.message || e)));
+  }
+
+  // ───── ВОРОТА: «1 Telegram-код = 1 активный скрипт» ─────
+  function getSid() {
+    let s = ''; try { s = localStorage.getItem('fuelTgSid') || ''; } catch (e) {}
+    if (!s) { s = (Math.random().toString(36) + Math.random().toString(36)).replace(/[^a-z0-9]/g, '').slice(0, 16);
+      try { localStorage.setItem('fuelTgSid', s); } catch (e) {} }
+    return s;
+  }
+  async function tgPost(path, payload) {
+    const base = await relayBase();
+    if (!base) return { ok: false, reason: 'offline' };
+    try {
+      const r = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
+      return await r.json();
+    } catch (e) { return { ok: false, reason: 'offline' }; }
+  }
+  function tgClaimReq(token, sid) { return tgPost('/claim', { tg: token, sid }); }
+  function tgHeartbeatReq(token, sid) { return tgPost('/heartbeat', { tg: token, sid }); }
+  function tgRelease() {
+    const tg = getTgToken(); if (!tg) return;
+    const sid = getSid();
+    relayBase().then((base) => {
+      if (!base) return;
+      const body = JSON.stringify({ tg, sid });
+      try {
+        if (navigator.sendBeacon) navigator.sendBeacon(base + '/release', body);
+        else fetch(base + '/release', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body, keepalive: true });
+      } catch (e) {}
+    });
+  }
+  // блокирующее окно ввода кода
+  function tgGateUI(message, preset) {
+    return new Promise((resolve) => {
+      injectStyles();
+      const old = document.getElementById('fuelGate'); if (old) old.remove();
+      const wrap = document.createElement('div'); wrap.id = 'fuelGate'; wrap.className = 'fq-ov center'; wrap.style.zIndex = '100040';
+      const card = document.createElement('div'); card.className = 'fq-card';
+      card.innerHTML = '<div class="fq-h">✈️ Код привязки к боту «Заправыч»</div>' +
+        '<div class="fq-sub" style="margin:8px 0 12px">' + escHtml(message) + '</div>';
+      const input = document.createElement('input');
+      input.value = preset || ''; input.placeholder = 'код из бота';
+      input.autocapitalize = 'off'; input.autocomplete = 'off'; input.spellcheck = false;
+      input.style.cssText = 'width:100%;padding:13px;font-size:18px;border:1px solid #cbd5e8;border-radius:12px;text-align:center;letter-spacing:2px;box-sizing:border-box';
+      const btn = document.createElement('button'); btn.className = 'fq-btn ok'; btn.textContent = 'Подключить'; btn.style.cssText = 'margin-top:12px;width:100%';
+      btn.onclick = () => { const v = (input.value || '').replace(/[^a-zA-Z0-9]/g, ''); if (!v) { input.focus(); return; } wrap.remove(); resolve(v); };
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
+      card.appendChild(input); card.appendChild(btn);
+      wrap.appendChild(card); document.body.appendChild(wrap);
+      setTimeout(() => { try { input.focus(); } catch (e) {} }, 50);
+    });
+  }
+  // вернуть валидный, занятый ЗА НАМИ код (блокирует, пока не получится)
+  async function tgEnsureClaim() {
+    const sid = getSid();
+    for (;;) {
+      let token = getTgToken();
+      if (!token) { token = await tgGateUI('Введи код привязки из бота «Заправыч» (/start → скопируй код).'); setTgToken(token); }
+      setBadge('✈️ проверяю код привязки…');
+      const res = await tgClaimReq(token, sid);
+      if (res && res.ok) { log('TG', 'код подтверждён, владение получено'); return { token, sid }; }
+      const reason = (res && res.reason) || 'offline';
+      if (reason === 'unknown') { setTgToken(''); const t = await tgGateUI('❌ Код не найден. Открой бота «Заправыч» → /start, скопируй СВОЙ код и введи снова.'); setTgToken(t); continue; }
+      if (reason === 'busy') { const t = await tgGateUI('⛔ Этот код уже работает в ДРУГОМ браузере. Один Telegram — один скрипт. Закрой тот браузер или введи другой код.', ''); setTgToken(t); continue; }
+      await tgGateUI('⚠️ Нет связи с сервером привязки. Проверь интернет и нажми «Подключить» ещё раз.', token); continue;
+    }
+  }
+  // heartbeat: держим владение; если код перехватили — стоп до повторной привязки
+  let tgHbRunning = false;
+  function startHeartbeat(sid) {
+    if (tgHbRunning) return; tgHbRunning = true;
+    (async function loop() {
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 15000));
+        const token = getTgToken(); if (!token) continue;
+        const res = await tgHeartbeatReq(token, sid);
+        if (res && res.ok === false && res.reason === 'busy') {
+          log('TG', 'код перехвачен другим браузером — стоп');
+          STATE.running = false; STATE.paused = true; grabGen++; clearTimeout(STATE.timer); STATE.busy = false;
+          setBadge('⛔ код перехвачен другим браузером');
+          await tgGateUI('⛔ Твой код перехватили в другом браузере — скрипт здесь остановлен. Введи код, чтобы вернуть работу сюда.');
+          await tgEnsureClaim();
+          STATE.paused = false;
+          if (STATE.plate && STATE.fuels.length) begin();
+        }
+      }
+    })();
   }
 
   function normalizePlate(v) {
@@ -699,14 +786,14 @@
     const tgLabel = () => getTgToken() ? '✈️ TG ✓' : '✈️ Telegram';
     tgBtn.textContent = tgLabel(); tgBtn.title = 'Привязать Telegram-бота «Заправыч» (QR придёт в чат)'; tgBtn.className = 'fq-tool';
     tgBtn.onclick = async () => {
-      const cur = getTgToken();
-      const v = prompt('Код привязки из бота «Заправыч» (отправь /start боту, скопируй код):', cur);
-      if (v === null) return;
-      const code = String(v).replace(/[^a-zA-Z0-9]/g, '');
-      setTgToken(code);
+      const t = await tgGateUI('Введи новый код привязки из бота «Заправыч».', getTgToken());
+      setTgToken(t); _relayBase = '';
+      const res = await tgClaimReq(t, getSid());
       tgBtn.textContent = tgLabel();
-      if (code) { _relayBase = ''; relayBase(); await infoDialog('✈️ Telegram привязан', 'Код сохранён. Когда поймаю QR — он прилетит в бота «Заправыч».'); }
-      else await infoDialog('✈️ Telegram отвязан', 'Код очищен — доставка в чат выключена.');
+      if (res && res.ok) await infoDialog('✈️ Telegram привязан', 'Код подтверждён — QR будет приходить тебе в бота.');
+      else if (res && res.reason === 'unknown') await infoDialog('❌ Код не найден', 'Проверь код в боте «Заправыч» (/start).');
+      else if (res && res.reason === 'busy') await infoDialog('⛔ Код занят', 'Этот код уже работает в другом браузере.');
+      else await infoDialog('⚠️ Нет связи', 'Не удалось проверить код — попробуй позже.');
     };
 
     tools.appendChild(logBtn); tools.appendChild(upBtn); tools.appendChild(rebind); tools.appendChild(codeBtn); tools.appendChild(editBtn); tools.appendChild(tgBtn);
@@ -860,6 +947,12 @@
     log('START', '=== запуск v3.8-solo (один номер, ручной ввод в панели, опрос раз в сек) ===');
     injectStyles();
     addTopButtons();
+
+    // ВОРОТА: без валидного кода привязки (и если он занят другим браузером) — НЕ запускаемся
+    const cl = await tgEnsureClaim();
+    startHeartbeat(cl.sid);
+    window.addEventListener('pagehide', tgRelease);
+    window.addEventListener('beforeunload', tgRelease);
 
     const sessionP = (async () => {
       await loadMaxScript();
