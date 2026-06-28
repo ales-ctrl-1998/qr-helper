@@ -40,7 +40,11 @@
   .hint{font-size:13px; color:var(--muted); text-align:center; margin:10px 2px 0}
   .ver{font-size:12px; color:var(--muted); text-align:center; margin-top:8px}
   ol{margin:0; padding-left:22px} ol li{margin:0 0 12px} ol li:last-child{margin-bottom:0}
-  .step-h{font-weight:700; font-size:16px; margin:0 0 12px; display:flex; align-items:center; gap:8px}
+  .step-h{font-weight:700; font-size:16px; margin:0 0 10px; display:flex; align-items:center; gap:8px}
+  .stepnum{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:var(--blue); color:#fff; font-weight:700; font-size:14px; flex:0 0 auto}
+  .step p{margin:0 0 4px} .step .desc{color:#26303f; font-size:15px}
+  .shot{margin:12px 0 2px; border:2px dashed #c3cee6; border-radius:12px; background:#f3f6fd; color:#8a97b2; text-align:center; padding:34px 10px; font-size:13px; font-weight:600}
+  .shot + .shot{margin-top:10px}
   b{color:var(--ink)}
   code{background:#eef2fb; border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:13px}
   .tip{background:#fff8e6; border:1px solid #f3e2ad; border-radius:12px; padding:10px 12px; font-size:13.5px; color:#6b5a1e; margin-top:12px}
@@ -80,9 +84,30 @@
 
   <!-- iOS -->
   <div id="ios" class="hidden">
-    <div class="card">
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">1</span> Скачать приложение Userscripts</p>
+      <p class="desc">Поставь из App Store бесплатное приложение <a href="https://apps.apple.com/us/app/userscripts/id1463298887" target="_blank" rel="noopener"><b>Userscripts</b></a> (оранжевая иконка).</p>
+      <div class="shot">📷 Скриншот 1</div>
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">2</span> Выбрать папку</p>
+      <p class="desc">Открой приложение Userscripts → нажми <b>«Set Userscripts Directory»</b> → нажми <b>«Готово»</b>.</p>
+      <div class="shot">📷 Скриншот 2</div>
+      <div class="shot">📷 Скриншот 3</div>
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">3</span> Включить Userscripts</p>
+      <p class="desc">Настройки iPhone → <b>Safari → Расширения → Userscripts</b> → включи <b>«Использование расширения»</b>.</p>
+      <div class="shot">📷 Скриншот 4</div>
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">4</span> Скачать скрипт</p>
       <button id="dl" class="btn dl" disabled>⏳ Загружаю код…</button>
-      <p class="hint" id="hint">Качает файл <b>solo.user.js</b> — потом переложишь его в папку Userscripts.</p>
+      <p class="hint" id="hint">Сохранит файл <b>solo.user.js</b> (в Файлы → Загрузки).</p>
       <p class="ver" id="ver"></p>
       <details>
         <summary>Или скопировать код вручную</summary>
@@ -90,19 +115,22 @@
         <textarea id="ta" readonly spellcheck="false"></textarea>
       </details>
     </div>
-    <div class="card">
-      <p class="step-h">📱 Установка на iPhone (Safari)</p>
-      <ol>
-        <li>Поставь из App Store бесплатное приложение <b><a href="https://apps.apple.com/us/app/userscripts/id1463298887" target="_blank" rel="noopener">Userscripts</a></b> (оранжевая иконка). Открой его раз → <b>«Set Userscripts Directory»</b> → выбери/создай папку (запомни её).</li>
-        <li>Настройки iPhone → <b>Safari → Расширения</b> → включи <b>Userscripts</b> → разрешения <b>«Разрешить для всех сайтов»</b>.</li>
-        <li>Вверху нажми зелёную <b>«⬇️ Скачать файл»</b> — сохранится <code>solo.user.js</code> (в Файлы → Загрузки).</li>
-        <li>Открой <b>«Файлы»</b> → найди <code>solo.user.js</code> → <b>перемести</b> в папку Userscripts.</li>
-        <li>Safari → значок расширений (<code>AA</code> / пазл в адресной строке) → <b>Userscripts</b> — скрипт появится в списке, включи его.</li>
-        <li>Открой бота СевТеха в MAX → миниапп. Появится панель — впиши номер и топливо.</li>
-        <li>✈️ В панели нажми <b>«Telegram»</b> и вставь <b>код привязки</b> (см. вверху / в боте) — и QR будет приходить тебе в Telegram.</li>
-      </ol>
-      <div class="tip">⚠️ MAX открывай в Safari через <b>web.max.ru</b> (веб-версию), а не в приложении — в приложение скрипт не встроить.</div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">5</span> Перенос скрипта</p>
+      <p class="desc">Открой <b>«Файлы»</b> → найди скачанный <code>solo.user.js</code> → <b>перемести</b> в папку Userscripts.</p>
     </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">6</span> Включить скрипт</p>
+      <p class="desc">Открой Safari → значок расширений (слева адресной строки):</p>
+      <div class="shot">📷 Скриншот 5</div>
+      <p class="desc">→ <b>«Управлять расширением»</b>:</p>
+      <div class="shot">📷 Скриншот 6</div>
+      <p class="desc">→ включи <b>Userscripts</b> и сохрани:</p>
+      <div class="shot">📷 Скриншот 7</div>
+    </div>
+
   </div>
 
   <!-- Android -->
