@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
-<title>Установка скрипта — QR на топливо</title>
+<title>Установка — QR на топливо</title>
 <style>
   :root{
     --blue:#3b6ef5; --blue-d:#2a55d0; --green:#1f9d57; --green-d:#178047;
-    --ink:#101725; --muted:#5b6678; --line:#e3e8f2; --bg:#eef2fb; --card:#fff;
+    --ink:#101725; --muted:#5b6678; --line:#e3e8f2; --card:#fff;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
@@ -24,84 +24,100 @@
     background:var(--card); border:1px solid var(--line); border-radius:18px;
     padding:18px 16px; margin:0 0 16px; box-shadow:0 6px 22px rgba(40,60,120,.07);
   }
-  .copybtn{
+  .btn{
     display:flex; align-items:center; justify-content:center; gap:10px;
     width:100%; border:0; border-radius:16px; cursor:pointer;
     background:linear-gradient(180deg,var(--blue),var(--blue-d)); color:#fff;
     font-size:19px; font-weight:700; padding:18px 16px; letter-spacing:.2px;
-    box-shadow:0 8px 20px rgba(59,110,245,.35); transition:transform .08s, background .2s, box-shadow .2s;
+    box-shadow:0 8px 20px rgba(59,110,245,.35); transition:transform .08s, background .2s;
   }
-  .copybtn:active{transform:scale(.98)}
-  .copybtn[disabled]{background:#9fb0d8; box-shadow:none; cursor:default}
-  .copybtn.ok{background:linear-gradient(180deg,var(--green),var(--green-d)); box-shadow:0 8px 20px rgba(31,157,87,.35)}
-  .dlbtn{background:linear-gradient(180deg,var(--green),var(--green-d)); box-shadow:0 8px 20px rgba(31,157,87,.35)}
-  .dlbtn[disabled]{background:#9fb0d8; box-shadow:none}
+  .btn:active{transform:scale(.98)}
+  .btn[disabled]{background:#9fb0d8; box-shadow:none; cursor:default}
+  .btn.ok{background:linear-gradient(180deg,var(--green),var(--green-d)); box-shadow:0 8px 20px rgba(31,157,87,.35)}
+  .btn.dl{background:linear-gradient(180deg,var(--green),var(--green-d)); box-shadow:0 8px 20px rgba(31,157,87,.35)}
+  .btn.dl[disabled]{background:#9fb0d8; box-shadow:none}
+  .btn + .btn{margin-top:12px}
   .hint{font-size:13px; color:var(--muted); text-align:center; margin:10px 2px 0}
   .ver{font-size:12px; color:var(--muted); text-align:center; margin-top:8px}
-  ol{margin:0; padding-left:22px}
-  ol li{margin:0 0 12px}
-  ol li:last-child{margin-bottom:0}
-  .step-h{font-weight:700; font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px}
-  .step-h .n{display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--blue); color:#fff; font-size:13px; font-weight:700}
+  ol{margin:0; padding-left:22px} ol li{margin:0 0 12px} ol li:last-child{margin-bottom:0}
+  .step-h{font-weight:700; font-size:16px; margin:0 0 12px; display:flex; align-items:center; gap:8px}
   b{color:var(--ink)}
   code{background:#eef2fb; border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:13px}
   .tip{background:#fff8e6; border:1px solid #f3e2ad; border-radius:12px; padding:10px 12px; font-size:13.5px; color:#6b5a1e; margin-top:12px}
   details{margin-top:14px}
   summary{cursor:pointer; color:var(--blue-d); font-size:14px; font-weight:600}
-  textarea{width:100%; height:160px; margin-top:10px; font:12px/1.4 ui-monospace,Menlo,monospace; border:1px solid var(--line); border-radius:12px; padding:10px; background:#fafbff; color:#333}
-  .foot{text-align:center; color:var(--muted); font-size:12px; margin-top:8px}
+  textarea{width:100%; height:140px; margin-top:10px; font:12px/1.4 ui-monospace,Menlo,monospace; border:1px solid var(--line); border-radius:12px; padding:10px; background:#fafbff; color:#333}
   a{color:var(--blue-d)}
+  .change{display:inline-block; margin-bottom:14px; font-size:14px; color:var(--blue-d); cursor:pointer; font-weight:600}
+  .hidden{display:none !important}
+  .foot{text-align:center; color:var(--muted); font-size:12px; margin-top:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <h1>⛽ QR на топливо — установка</h1>
-  <p class="sub">Скрипт ловит код напрямую через API, минуя тормозной сайт. Ставится один раз.</p>
+  <p class="sub">Скрипт ловит код напрямую, минуя тормозной сайт, и присылает QR тебе в Telegram. Ставится один раз.</p>
 
-  <div class="card" id="tgcard" style="display:none;background:#eaf3ff;border-color:#bcd6ff">
+  <!-- код привязки из ?tg= -->
+  <div class="card hidden" id="tgcard" style="background:#eaf3ff;border-color:#bcd6ff">
     <div style="font-weight:700;margin-bottom:4px">✈️ Твой код привязки к боту</div>
     <div style="font:700 22px ui-monospace,Menlo,monospace;letter-spacing:1px" id="tgcode"></div>
     <div style="font-size:13px;color:#3a4a66;margin-top:6px">После установки открой миниапп → в панели скрипта нажми <b>«✈️ Telegram»</b> и вставь этот код. Тогда QR будет приходить тебе в Telegram.</div>
   </div>
 
-  <!-- СКАЧАТЬ / КОПИРОВАНИЕ -->
-  <div class="card">
-    <button id="dl" class="copybtn dlbtn" disabled>⏳ Загружаю код…</button>
-    <p class="hint" id="hint">Качает файл <b>solo.user.js</b> — потом переложишь его в папку Userscripts.</p>
-    <p class="ver" id="ver"></p>
-
-    <details>
-      <summary>Или скопировать код вручную</summary>
-      <button id="copy" class="copybtn" style="margin-top:10px" disabled>📋 Скопировать код</button>
-      <textarea id="ta" readonly spellcheck="false"></textarea>
-      <p class="hint">Если копирование не сработало — тапни в поле → «Выбрать всё» → «Скопировать».</p>
-    </details>
+  <!-- ВЫБОР ПЛАТФОРМЫ -->
+  <div id="chooser">
+    <div class="card">
+      <p class="step-h">📱 Какой у тебя телефон?</p>
+      <button class="btn" onclick="pick('ios')">📱 У меня iPhone</button>
+      <button class="btn" style="background:linear-gradient(180deg,#5a6b8c,#46556f);box-shadow:0 8px 20px rgba(70,85,111,.3)" onclick="pick('android')">🤖 У меня Android</button>
+    </div>
   </div>
 
-  <!-- ИНСТРУКЦИЯ iOS -->
-  <div class="card">
-    <p class="step-h"><span class="n">📱</span> Установка на iPhone (Safari)</p>
-    <ol>
-      <li>Поставь из App Store бесплатное приложение <b><a href="https://apps.apple.com/us/app/userscripts/id1463298887" target="_blank" rel="noopener">Userscripts</a></b> (оранжевая иконка). Открой его раз и нажми <b>«Set Userscripts Directory»</b> — выбери/создай папку для скриптов (запомни её).</li>
-      <li>Настройки iPhone → <b>Safari → Расширения</b> → включи <b>Userscripts</b> → разрешения <b>«Разрешить для всех сайтов»</b>.</li>
-      <li>Нажми сверху зелёную кнопку <b>«⬇️ Скачать файл»</b> — сохранится <code>solo.user.js</code> (обычно в Файлы → Загрузки).</li>
-      <li>Открой приложение <b>«Файлы»</b> → найди <code>solo.user.js</code> в Загрузках → <b>перемести</b> его в ту папку, что выбрал для Userscripts.</li>
-      <li>Открой Safari → значок расширений (<code>AA</code> / пазл в адресной строке) → <b>Userscripts</b> — в списке появится скрипт. Проверь, что он включён (тумблер).</li>
-      <li>Открой бота СевТеха в MAX → миниапп. Появится наша панель — впиши номер, выбери топливо.</li>
-      <li>✈️ В панели нажми <b>«Telegram»</b> и вставь <b>код привязки</b> (см. вверху / в боте) — и QR будет приходить тебе в Telegram.</li>
-    </ol>
-    <div class="tip">⚠️ MAX открывай в Safari через <b>web.max.ru</b> (веб-версию), а не в приложении — в приложение скрипт не встроить.</div>
+  <!-- смена платформы -->
+  <span class="change hidden" id="change" onclick="reset()">← выбрать другой телефон</span>
+
+  <!-- iOS -->
+  <div id="ios" class="hidden">
+    <div class="card">
+      <button id="dl" class="btn dl" disabled>⏳ Загружаю код…</button>
+      <p class="hint" id="hint">Качает файл <b>solo.user.js</b> — потом переложишь его в папку Userscripts.</p>
+      <p class="ver" id="ver"></p>
+      <details>
+        <summary>Или скопировать код вручную</summary>
+        <button id="copy" class="btn" style="margin-top:10px" disabled>📋 Скопировать код</button>
+        <textarea id="ta" readonly spellcheck="false"></textarea>
+      </details>
+    </div>
+    <div class="card">
+      <p class="step-h">📱 Установка на iPhone (Safari)</p>
+      <ol>
+        <li>Поставь из App Store бесплатное приложение <b><a href="https://apps.apple.com/us/app/userscripts/id1463298887" target="_blank" rel="noopener">Userscripts</a></b> (оранжевая иконка). Открой его раз → <b>«Set Userscripts Directory»</b> → выбери/создай папку (запомни её).</li>
+        <li>Настройки iPhone → <b>Safari → Расширения</b> → включи <b>Userscripts</b> → разрешения <b>«Разрешить для всех сайтов»</b>.</li>
+        <li>Вверху нажми зелёную <b>«⬇️ Скачать файл»</b> — сохранится <code>solo.user.js</code> (в Файлы → Загрузки).</li>
+        <li>Открой <b>«Файлы»</b> → найди <code>solo.user.js</code> → <b>перемести</b> в папку Userscripts.</li>
+        <li>Safari → значок расширений (<code>AA</code> / пазл в адресной строке) → <b>Userscripts</b> — скрипт появится в списке, включи его.</li>
+        <li>Открой бота СевТеха в MAX → миниапп. Появится панель — впиши номер и топливо.</li>
+        <li>✈️ В панели нажми <b>«Telegram»</b> и вставь <b>код привязки</b> (см. вверху / в боте) — и QR будет приходить тебе в Telegram.</li>
+      </ol>
+      <div class="tip">⚠️ MAX открывай в Safari через <b>web.max.ru</b> (веб-версию), а не в приложении — в приложение скрипт не встроить.</div>
+    </div>
   </div>
 
-  <!-- ИНСТРУКЦИЯ Android -->
-  <div class="card">
-    <p class="step-h"><span class="n">🤖</span> Установка на Android (Firefox)</p>
-    <ol>
-      <li>Поставь <b>Firefox</b> и расширение <b>Tampermonkey</b> в нём.</li>
-      <li>Открой ссылку <a id="rawlink" href="https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js">solo.user.js</a> — Tampermonkey сам предложит «Установить».</li>
-      <li>Открой бота СевТеха в MAX (через <b>web.max.ru</b>) → миниапп. Появится панель — впиши номер, выбери топливо, жди код.</li>
-    </ol>
+  <!-- Android -->
+  <div id="android" class="hidden">
+    <div class="card">
+      <p class="step-h">🤖 Установка на Android (Firefox)</p>
+      <ol>
+        <li>Поставь браузер <b>Firefox</b> и в нём расширение <b>Tampermonkey</b>.</li>
+        <li>Открой ссылку <a id="rawlink" href="https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js">solo.user.js</a> — Tampermonkey сам предложит <b>«Установить»</b>.</li>
+        <li>Открой бота СевТеха в MAX → миниапп. Появится панель — впиши номер и топливо.</li>
+        <li>✈️ В панели нажми <b>«Telegram»</b> и вставь <b>код привязки</b> (см. вверху / в боте) — и QR будет приходить тебе в Telegram.</li>
+      </ol>
+      <div class="tip">⚠️ MAX открывай через <b>web.max.ru</b> (веб-версию), а не в приложении.</div>
+      <p class="ver" id="ver2"></p>
+    </div>
   </div>
 
   <p class="foot">Скрипт обновляется сам. Вопросы — к тому, кто дал ссылку.</p>
@@ -110,69 +126,75 @@
 
 <script>
 (function(){
-  var dl=document.getElementById('dl'),
-      btn=document.getElementById('copy'),
-      hint=document.getElementById('hint'),
-      ver=document.getElementById('ver'),
-      ta=document.getElementById('ta');
-  var CODE=null;
   var RAW='https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js';
+  var PKEY='qrPlatform';
+  var dl=document.getElementById('dl'), btn=document.getElementById('copy'),
+      hint=document.getElementById('hint'), ver=document.getElementById('ver'),
+      ver2=document.getElementById('ver2'), ta=document.getElementById('ta');
+  var CODE=null;
 
-  // показать код привязки из ?tg=
+  // код привязки из ?tg=
   try {
     var tg=(new URLSearchParams(location.search).get('tg')||'').replace(/[^a-zA-Z0-9]/g,'');
-    if(tg){ document.getElementById('tgcode').textContent=tg; document.getElementById('tgcard').style.display='block'; }
+    if(tg){ document.getElementById('tgcode').textContent=tg; document.getElementById('tgcard').classList.remove('hidden'); }
   } catch(e){}
 
-  // тянем актуальный скрипт (один источник правды)
+  // выбор платформы
+  function show(p){
+    document.getElementById('chooser').classList.add('hidden');
+    document.getElementById('ios').classList.toggle('hidden', p!=='ios');
+    document.getElementById('android').classList.toggle('hidden', p!=='android');
+    document.getElementById('change').classList.remove('hidden');
+    try{ localStorage.setItem(PKEY,p); }catch(e){}
+    window.scrollTo(0,0);
+  }
+  window.pick=function(p){ show(p); };
+  window.reset=function(){
+    try{ localStorage.removeItem(PKEY); }catch(e){}
+    document.getElementById('ios').classList.add('hidden');
+    document.getElementById('android').classList.add('hidden');
+    document.getElementById('change').classList.add('hidden');
+    document.getElementById('chooser').classList.remove('hidden');
+    window.scrollTo(0,0);
+  };
+  try{ var saved=localStorage.getItem(PKEY); if(saved==='ios'||saved==='android') show(saved); }catch(e){}
+
+  // тянем актуальный скрипт (для iOS: скачать/скопировать)
   fetch(RAW,{cache:'no-store'})
     .then(function(r){ if(!r.ok) throw new Error(r.status); return r.text(); })
     .then(function(t){
       CODE=t; ta.value=t;
       dl.disabled=false; dl.textContent='⬇️ Скачать файл (solo.user.js)';
       btn.disabled=false; btn.textContent='📋 Скопировать код';
-      var m=t.match(/@version\s+([^\s]+)/);
-      ver.textContent=m?('версия '+m[1]):'';
+      var m=t.match(/@version\s+([^\s]+)/), s=m?('версия '+m[1]):'';
+      ver.textContent=s; ver2.textContent=s;
     })
-    .catch(function(e){
-      dl.textContent='⚠️ Не удалось загрузить';
-      hint.textContent='Открой ссылку solo.user.js вручную (внизу, раздел Android) и скопируй текст.';
-    });
+    .catch(function(){ dl.textContent='⚠️ Не удалось загрузить'; hint.textContent='Проверь интернет и обнови страницу.'; });
 
-  // СКАЧИВАНИЕ файла
+  // СКАЧАТЬ файл (iOS)
   dl.addEventListener('click',function(){
     if(!CODE) return;
     try{
-      var blob=new Blob([CODE],{type:'application/octet-stream'});
-      var url=URL.createObjectURL(blob);
-      var a=document.createElement('a');
-      a.href=url; a.download='solo.user.js';
+      var url=URL.createObjectURL(new Blob([CODE],{type:'application/octet-stream'}));
+      var a=document.createElement('a'); a.href=url; a.download='solo.user.js';
       document.body.appendChild(a); a.click();
       setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },1500);
       dl.classList.add('ok'); dl.textContent='✅ Файл скачан';
       hint.textContent='Теперь открой «Файлы» и переложи solo.user.js в папку Userscripts.';
       setTimeout(function(){ dl.classList.remove('ok'); dl.textContent='⬇️ Скачать ещё раз'; },2800);
-    }catch(e){
-      hint.textContent='Не вышло скачать — скопируй код вручную (раскрой ниже).';
-    }
+    }catch(e){ hint.textContent='Не вышло скачать — скопируй код вручную (раскрой ниже).'; }
   });
 
-  // КОПИРОВАНИЕ (запасной путь)
-  function flashOk(){
-    btn.classList.add('ok'); btn.textContent='✅ Скопировано!';
-    setTimeout(function(){ btn.classList.remove('ok'); btn.textContent='📋 Скопировать ещё раз'; },2500);
-  }
-  function legacyCopy(){
-    ta.focus(); ta.setSelectionRange(0, ta.value.length);
+  // КОПИРОВАТЬ (запасной путь)
+  function flashOk(){ btn.classList.add('ok'); btn.textContent='✅ Скопировано!';
+    setTimeout(function(){ btn.classList.remove('ok'); btn.textContent='📋 Скопировать ещё раз'; },2500); }
+  function legacyCopy(){ ta.focus(); ta.setSelectionRange(0, ta.value.length);
     var ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
-    if(ok) flashOk();
-    else { hint.textContent='Не вышло автоматом — выдели текст в поле и скопируй.'; }
-  }
+    if(ok) flashOk(); else hint.textContent='Выдели текст в поле и скопируй вручную.'; }
   btn.addEventListener('click',function(){
     if(!CODE) return;
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(CODE).then(flashOk).catch(legacyCopy);
-    } else { legacyCopy(); }
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(CODE).then(flashOk).catch(legacyCopy);
+    else legacyCopy();
   });
 })();
 </script>
