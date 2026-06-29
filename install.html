@@ -58,6 +58,11 @@
   .change{display:inline-block; margin-bottom:14px; font-size:14px; color:var(--blue-d); cursor:pointer; font-weight:600}
   .hidden{display:none !important}
   .foot{text-align:center; color:var(--muted); font-size:12px; margin-top:8px}
+  .warnbar{background:#fff4f4;border:2px solid #f0b4b4;border-radius:14px;padding:13px 14px;margin:0 0 16px;color:#7a1f1f;font-size:14px;line-height:1.5}
+  .warnbar .h{font-weight:800;font-size:15.5px;margin-bottom:5px}
+  .warnbar b{color:#9b1c1c}
+  .warnbar ul{margin:7px 0 0;padding-left:18px} .warnbar li{margin:3px 0}
+  .warnbar.hot{background:#ffe1e1;border-color:#e58a8a;box-shadow:0 6px 18px rgba(200,60,60,.18)}
 </style>
 </head>
 <body>
@@ -79,6 +84,15 @@
 
   <h1>⛽ QR на топливо — установка</h1>
   <p class="sub">Скрипт ловит код напрямую, минуя тормозной сайт, и присылает QR тебе в Telegram. Ставится один раз.</p>
+
+  <div class="warnbar" id="warnbar">
+    <div class="h">⚠️ Открой эту страницу в браузере</div>
+    Если ты открыл ссылку <b>внутри Telegram</b> — установка не сработает. Нужен настоящий браузер: <b>Safari</b> (iPhone) или <b>Chrome</b> (Android).
+    <ul>
+      <li><b>iPhone:</b> внизу нажми <b>«⤴» → «Открыть в Safari»</b>.</li>
+      <li><b>Android:</b> вверху справа <b>⋮ → «Открыть в браузере»</b>.</li>
+    </ul>
+  </div>
 
   <!-- код привязки из ?tg= -->
   <div class="card hidden" id="tgcard" style="background:#eaf3ff;border-color:#bcd6ff">
@@ -213,6 +227,16 @@
   try {
     var tg=(new URLSearchParams(location.search).get('tg')||'').replace(/[^a-zA-Z0-9]/g,'');
     if(tg){ document.getElementById('tgcode').textContent=tg; document.getElementById('tgcard').classList.remove('hidden'); }
+  } catch(e){}
+
+  // усиливаем баннер «открой в браузере», если это встроенный вебвью мессенджера
+  try {
+    var ua=navigator.userAgent||'';
+    var inApp=/FBAN|FBAV|Instagram|Line\/|Telegram|WhatsApp|Snapchat|MicroMessenger/i.test(ua)||!!window.TelegramWebviewProxy;
+    if(inApp){
+      var wb=document.getElementById('warnbar');
+      if(wb){ wb.classList.add('hot'); var h=wb.querySelector('.h'); if(h) h.textContent='⚠️ Ты сейчас внутри Telegram — открой в браузере'; }
+    }
   } catch(e){}
 
   // выбор платформы
