@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.11.3
+// @version      3.11.4
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        https://fuel.sevtech.org/*
 // @run-at       document-idle
@@ -55,7 +55,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.11.3';   // держать в синхроне с @version
+  const VERSION = '3.11.4';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -251,6 +251,15 @@
       try { localStorage.setItem('fuelTgSid', s); } catch (e) {} }
     return s;
   }
+  function verLt(a, b) {   // a старее b?
+    const pa = String(a || '').split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = String(b || '').split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const x = pa[i] || 0, y = pb[i] || 0;
+      if (x < y) return true; if (x > y) return false;
+    }
+    return false;
+  }
   async function tgPost(path, payload) {
     const base = await relayBase();
     if (!base) return { ok: false, reason: 'offline' };
@@ -307,7 +316,7 @@
       if (!token) { token = await tgGateUI('Введи код привязки из бота «Заправыч» (/start → скопируй код).'); setTgToken(token); entered = true; }
       setBadge('✈️ проверяю код привязки…');
       const res = await tgClaimReq(token, sid);
-      if (res && res.ok) { log('TG', 'код подтверждён, владение получено'); if (entered) tgNotify({ kind: 'bind' }); return { token, sid }; }
+      if (res && res.ok) { log('TG', 'код подтверждён, владение получено'); if (entered) tgNotify({ kind: 'bind' }); return { token, sid, latest: res.latest, update_url: res.update_url }; }
       const reason = (res && res.reason) || 'offline';
       if (reason === 'unknown') { setTgToken(''); const t = await tgGateUI('❌ Код не найден. Открой бота «Заправыч» → /start, скопируй СВОЙ код и введи снова.'); setTgToken(t); entered = true; continue; }
       if (reason === 'busy') { const t = await tgGateUI('⛔ Этот код уже работает в ДРУГОМ браузере. Один Telegram — один скрипт. Закрой тот браузер или введи другой код.', ''); setTgToken(t); entered = true; continue; }
@@ -960,6 +969,16 @@
     const cl = await tgEnsureClaim();
     startHeartbeat(cl.sid);
     tgNotify({ kind: 'start', version: VERSION });   // отбивка «скрипт запущен + версия»
+    // проверка версии: если устарела — окно со ссылкой на инструкцию (не блокируем работу)
+    if (cl.latest && verLt(VERSION, cl.latest)) {
+      const url = cl.update_url || '';
+      infoDialog('⚠️ Доступно обновление',
+        'Установлена устаревшая версия <b>' + escHtml(VERSION) + '</b>. Актуальная — <b>' + escHtml(cl.latest) + '</b>.<br>'
+        + 'Старая версия может работать неправильно — обнови.<br><br>'
+        + (url ? '<a href="' + escHtml(url) + '" target="_blank" rel="noopener" class="fq-btn ok" style="display:inline-block;text-decoration:none">🔄 Открыть инструкцию по обновлению</a>'
+              + '<br><br><span class="fq-sub">или ссылкой: ' + escHtml(url) + '</span>'
+              : 'Спроси ссылку у того, кто дал бота.'));
+    }
     window.addEventListener('pagehide', tgRelease);
     window.addEventListener('beforeunload', tgRelease);
 
