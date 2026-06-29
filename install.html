@@ -58,6 +58,9 @@
   .change{display:inline-block; margin-bottom:14px; font-size:14px; color:var(--blue-d); cursor:pointer; font-weight:600}
   .hidden{display:none !important}
   .foot{text-align:center; color:var(--muted); font-size:12px; margin-top:8px}
+  code.copyable{cursor:pointer; user-select:all}
+  code.copyable:active{background:#dbe6ff}
+  code.copyable.copied{background:#dff3e6; border-color:#bfe3cf; color:#1f7a44}
 </style>
 </head>
 <body>
@@ -160,7 +163,7 @@
 
     <div class="card step">
       <p class="step-h"><span class="stepnum">8</span> Открыть бота раздачи</p>
-      <p class="desc">Перейди в бота <b>СевТех</b>. Если раньше он не был запущен — найди его через <b>поиск</b> по юзернейму: <code>fuel_92_bot</code></p>
+      <p class="desc">Перейди в бота <b>СевТех</b>. Если раньше он не был запущен — найди его через <b>поиск</b> по юзернейму: <code class="copyable" onclick="copyClip('fuel_92_bot', this)">fuel_92_bot</code> <span style="font-size:12px;color:var(--muted)">— нажми, чтобы скопировать</span></p>
       <p class="desc">Если бот предложит <b>«Запустить»</b> — нажми.</p>
     </div>
 
@@ -223,6 +226,14 @@
   window.copyL=function(){
     function done(){ var h=document.getElementById('inapp-hint'); if(h) h.textContent='✅ Ссылка скопирована — открой Safari и вставь её.'; }
     try{ navigator.clipboard.writeText(location.href).then(done).catch(done); }catch(e){ done(); }
+  };
+  window.copyClip=function(text, el){
+    function done(){
+      if(!el || el.classList.contains('copied')) return;
+      var orig=el.textContent; el.classList.add('copied'); el.textContent='✓ скопировано';
+      setTimeout(function(){ el.textContent=orig; el.classList.remove('copied'); },1400);
+    }
+    try{ navigator.clipboard.writeText(text).then(done).catch(done); }catch(e){ try{ done(); }catch(_){} }
   };
   if(inApp()){ var io=document.getElementById('inapp'); if(io) io.classList.remove('hidden'); }
 
