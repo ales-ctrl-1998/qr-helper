@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.1
+// @version      3.14.2
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -82,7 +82,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.1';   // держать в синхроне с @version
+  const VERSION = '3.14.2';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -874,8 +874,52 @@
   }
 
   // ───── верхние кнопки ─────
+  // ───── НЕ ДАЁМ iPhone ЗАБЛОКИРОВАТЬ ЭКРАН (Screen Wake Lock, iOS 16.4+) ─────
+  // iOS гасит экран по таймауту → вкладка уходит в фон → JS замирает → раздача пропущена.
+  // Wake Lock держит экран активным, пока вкладка на ПЕРЕДНЕМ плане (как видео/читалка).
+  // Освобождается при сворачивании → при возврате на вкладку перезапрашиваем. Нужен жест юзера —
+  // берём на первом тапе и по кнопке. Если API нет (старый iOS) — подсказываем «Автоблокировка→Никогда».
+  let _wakeLock = null, _wakeWanted = false, _wakeBtn = null;
+  function _wakeSupported() { try { return !!(navigator.wakeLock && navigator.wakeLock.request); } catch (e) { return false; } }
+  function updateWakeBtn() {
+    if (!_wakeBtn) return;
+    _wakeBtn.textContent = _wakeLock ? '☀️ не гаснет' : (_wakeWanted ? '☀️ …' : '🌙 экран');
+    _wakeBtn.style.borderColor = _wakeLock ? '#1f9d57' : '#c4ccde';
+  }
+  async function acquireWake() {
+    _wakeWanted = true; updateWakeBtn();
+    if (!_wakeSupported()) return false;
+    if (_wakeLock) return true;
+    if (document.visibilityState !== 'visible') return false;
+    try {
+      _wakeLock = await navigator.wakeLock.request('screen');
+      _wakeLock.addEventListener('release', () => { _wakeLock = null; updateWakeBtn(); });
+      log('UI', '☀️ wake lock получен — экран не гаснет');
+      updateWakeBtn(); return true;
+    } catch (e) { log('UI', 'wake lock не вышел: ' + (e.message || e)); _wakeLock = null; updateWakeBtn(); return false; }
+  }
+  function releaseWake() { _wakeWanted = false; try { if (_wakeLock) _wakeLock.release(); } catch (e) {} _wakeLock = null; updateWakeBtn(); }
+  // перезахват при возврате на вкладку (Wake Lock слетает в фоне) + первый жест активирует его
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && _wakeWanted) acquireWake(); });
+  document.addEventListener('touchend', () => { if (_wakeWanted && !_wakeLock) acquireWake(); }, { passive: true });
+  document.addEventListener('click', () => { if (_wakeWanted && !_wakeLock) acquireWake(); }, { passive: true });
+
   function addTopButtons() {
     const tools = document.createElement('div'); tools.className = 'fq-tools'; document.body.appendChild(tools);
+
+    _wakeBtn = document.createElement('button');
+    _wakeBtn.className = 'fq-tool';
+    _wakeBtn.title = 'Не давать экрану гаснуть (чтобы скрипт не уснул в раздачу)';
+    _wakeBtn.onclick = async () => {
+      if (_wakeLock || _wakeWanted) { releaseWake(); return; }
+      const ok = await acquireWake();
+      if (!ok && !_wakeSupported()) {
+        await infoDialog('☀️ Экран блокируется', 'Твой браузер не умеет держать экран сам. Поставь вручную:<br><br>'
+          + '<b>Настройки → Экран и яркость → Автоблокировка → Никогда</b> (на время раздачи).<br><br>'
+          + 'И держи эту вкладку открытой на переднем плане.');
+      }
+    };
+    updateWakeBtn();
 
     const rebind = document.createElement('button');
     rebind.textContent = '📱 номер'; rebind.title = 'Поделиться номером телефона в MAX (реавторизация)'; rebind.className = 'fq-tool';
@@ -923,7 +967,7 @@
       else await infoDialog('⚠️ Нет связи', 'Не удалось проверить код — попробуй позже.');
     };
 
-    tools.appendChild(rebind); tools.appendChild(codeBtn); tools.appendChild(editBtn); tools.appendChild(tgBtn);
+    tools.appendChild(_wakeBtn); tools.appendChild(rebind); tools.appendChild(codeBtn); tools.appendChild(editBtn); tools.appendChild(tgBtn);
   }
 
   // ───── НАСТРОЙКА: ввод номера ПРЯМО в панели + выбор топлива ─────
@@ -1082,6 +1126,7 @@
     log('START', '=== запуск v3.8-solo v' + VERSION + ' (один номер, ручной ввод в панели) ===');
     injectStyles();
     addTopButtons();
+    acquireWake();   // включаем удержание экрана (сработает по первому тапу, если нужен жест)
 
     // поднимаем сохранённые код/номер/контакт из постоянного хранилища (переживает закрытие браузера)
     await hydrateStore();
