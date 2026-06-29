@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SevTech Fuel QR — ОДИН НОМЕР (ручной ввод в панели)
 // @namespace    sevtech-fuel
-// @version      3.11.0
+// @version      3.11.1
 // @description  Упрощённая версия под ОДНУ машину в НИЗКОМ ПРОФИЛЕ (палят автоматику — ведём себя как живой человек): госномер вводится ПРЯМО в панели скрипта (поле + живая плашка РФ), топливо кнопками по приоритету, неровный опрос ~раз в секунду (джиттер). Когда нужное топливо появилось — берёт QR без долбилова: 1 последовательный воркер /create (без параллельных залпов), человеческие паузы, /create стартует сразу (T+0), /plate/check крутится параллельно и не блокирует. Тихая авто-реавторизация MAX (0 тапов), сам грузит MAX SDK. Детект «код уже есть»/кулдаун/блок. Защита «✏️» от прерывания захвата. Лог + «💾 лог». Без базы и мульти-номера. Ставка на тайминг и живую сессию, а не на объём запросов. // v3.8.2: низкий профиль (1 воркер, джиттер, паузы) по просьбе — чтобы не палиться.
 // @match        https://fuel.sevtech.org/*
 // @run-at       document-idle
@@ -55,7 +55,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.11.0';   // держать в синхроне с @version
+  const VERSION = '3.11.1';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -301,15 +301,16 @@
   // вернуть валидный, занятый ЗА НАМИ код (блокирует, пока не получится)
   async function tgEnsureClaim() {
     const sid = getSid();
+    let entered = false;   // код введён руками в этот заход → шлём «✅ Код привязан»
     for (;;) {
       let token = getTgToken();
-      if (!token) { token = await tgGateUI('Введи код привязки из бота «Заправыч» (/start → скопируй код).'); setTgToken(token); }
+      if (!token) { token = await tgGateUI('Введи код привязки из бота «Заправыч» (/start → скопируй код).'); setTgToken(token); entered = true; }
       setBadge('✈️ проверяю код привязки…');
       const res = await tgClaimReq(token, sid);
-      if (res && res.ok) { log('TG', 'код подтверждён, владение получено'); return { token, sid }; }
+      if (res && res.ok) { log('TG', 'код подтверждён, владение получено'); if (entered) tgNotify({ kind: 'bind' }); return { token, sid }; }
       const reason = (res && res.reason) || 'offline';
-      if (reason === 'unknown') { setTgToken(''); const t = await tgGateUI('❌ Код не найден. Открой бота «Заправыч» → /start, скопируй СВОЙ код и введи снова.'); setTgToken(t); continue; }
-      if (reason === 'busy') { const t = await tgGateUI('⛔ Этот код уже работает в ДРУГОМ браузере. Один Telegram — один скрипт. Закрой тот браузер или введи другой код.', ''); setTgToken(t); continue; }
+      if (reason === 'unknown') { setTgToken(''); const t = await tgGateUI('❌ Код не найден. Открой бота «Заправыч» → /start, скопируй СВОЙ код и введи снова.'); setTgToken(t); entered = true; continue; }
+      if (reason === 'busy') { const t = await tgGateUI('⛔ Этот код уже работает в ДРУГОМ браузере. Один Telegram — один скрипт. Закрой тот браузер или введи другой код.', ''); setTgToken(t); entered = true; continue; }
       await tgGateUI('⚠️ Нет связи с сервером привязки. Проверь интернет и нажми «Подключить» ещё раз.', token); continue;
     }
   }
@@ -795,7 +796,7 @@
       setTgToken(t); _relayBase = '';
       const res = await tgClaimReq(t, getSid());
       tgBtn.textContent = tgLabel();
-      if (res && res.ok) await infoDialog('✈️ Telegram привязан', 'Код подтверждён — QR будет приходить тебе в бота.');
+      if (res && res.ok) { tgNotify({ kind: 'bind' }); await infoDialog('✈️ Telegram привязан', 'Код подтверждён — QR будет приходить тебе в бота.'); }
       else if (res && res.reason === 'unknown') await infoDialog('❌ Код не найден', 'Проверь код в боте «Заправыч» (/start).');
       else if (res && res.reason === 'busy') await infoDialog('⛔ Код занят', 'Этот код уже работает в другом браузере.');
       else await infoDialog('⚠️ Нет связи', 'Не удалось проверить код — попробуй позже.');
