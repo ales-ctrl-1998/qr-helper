@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SevTech Fuel QR — ОДИН НОМЕР (ручной ввод в панели)
 // @namespace    sevtech-fuel
-// @version      3.10.0-solo
+// @version      3.10.1-solo
 // @description  Упрощённая версия под ОДНУ машину в НИЗКОМ ПРОФИЛЕ (палят автоматику — ведём себя как живой человек): госномер вводится ПРЯМО в панели скрипта (поле + живая плашка РФ), топливо кнопками по приоритету, неровный опрос ~раз в секунду (джиттер). Когда нужное топливо появилось — берёт QR без долбилова: 1 последовательный воркер /create (без параллельных залпов), человеческие паузы, /create стартует сразу (T+0), /plate/check крутится параллельно и не блокирует. Тихая авто-реавторизация MAX (0 тапов), сам грузит MAX SDK. Детект «код уже есть»/кулдаун/блок. Защита «✏️» от прерывания захвата. Лог + «💾 лог». Без базы и мульти-номера. Ставка на тайминг и живую сессию, а не на объём запросов. // v3.8.2: низкий профиль (1 воркер, джиттер, паузы) по просьбе — чтобы не палиться.
 // @match        https://fuel.sevtech.org/*
 // @run-at       document-idle
@@ -55,6 +55,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
+  const VERSION = '3.10.1-solo';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -260,6 +261,10 @@
   }
   function tgClaimReq(token, sid) { return tgPost('/claim', { tg: token, sid }); }
   function tgHeartbeatReq(token, sid) { return tgPost('/heartbeat', { tg: token, sid }); }
+  function tgNotify(payload) {   // отбивка в бота (старт / номер / смена номера); fire-and-forget
+    const tg = getTgToken(); if (!tg) return;
+    tgPost('/notify', Object.assign({ tg }, payload));
+  }
   function tgRelease() {
     const tg = getTgToken(); if (!tg) return;
     const sid = getSid();
@@ -923,6 +928,8 @@
     STATE.plate = r.plate; STATE.fuels = r.fuels; STATE.confirmed = !PLATE_STD.test(r.plate);
     STATE.grabbed = false; STATE.dropped = false; STATE.ticket = null;
     reportedSuccess = false; reportedFail = false; reportedWait = false;   // новый номер/заход → можно снова отчитаться
+    if (prev && prev !== r.plate) tgNotify({ kind: 'change', old: prev, new: r.plate, fuels_pretty: prettyPref(r.fuels) });
+    else tgNotify({ kind: 'target', plate: r.plate, fuels_pretty: prettyPref(r.fuels) });
     log('START', 'цель: ' + STATE.plate + ' [' + STATE.fuels.join(',') + '], настройки: ' + JSON.stringify(CONFIG));
     begin();
   }
@@ -951,6 +958,7 @@
     // ВОРОТА: без валидного кода привязки (и если он занят другим браузером) — НЕ запускаемся
     const cl = await tgEnsureClaim();
     startHeartbeat(cl.sid);
+    tgNotify({ kind: 'start', version: VERSION });   // отбивка «скрипт запущен + версия»
     window.addEventListener('pagehide', tgRelease);
     window.addEventListener('beforeunload', tgRelease);
 
