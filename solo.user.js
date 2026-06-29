@@ -1,15 +1,11 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.13.2
+// @version      3.13.3
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM.setValue
-// @grant        GM.getValue
-// @grant        unsafeWindow
+// @grant        none
 // @updateURL    https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js
 // @downloadURL  https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js
 // ==/UserScript==
@@ -62,7 +58,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.13.2';   // держать в синхроне с @version
+  const VERSION = '3.13.3';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
