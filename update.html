@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Обновление — Заправыч</title>
+<style>
+  :root{
+    --blue:#3b6ef5; --blue-d:#2a55d0; --green:#1f9d57; --green-d:#178047;
+    --ink:#101725; --muted:#5b6678; --line:#e3e8f2; --card:#fff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); background:linear-gradient(180deg,#f4f7ff,#e7edfb 60%,#e3e9f7);
+    min-height:100vh; padding:20px 16px calc(40px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:560px; margin:0 auto}
+  h1{font-size:22px; margin:6px 0 2px; letter-spacing:-.3px}
+  .sub{color:var(--muted); font-size:14px; margin:0 0 18px}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:18px 16px; margin:0 0 16px; box-shadow:0 6px 22px rgba(40,60,120,.07);
+  }
+  .btn{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    width:100%; border:0; border-radius:16px; cursor:pointer;
+    background:linear-gradient(180deg,var(--blue),var(--blue-d)); color:#fff;
+    font-size:19px; font-weight:700; padding:18px 16px; letter-spacing:.2px;
+    box-shadow:0 8px 20px rgba(59,110,245,.35); transition:transform .08s;
+  }
+  .btn:active{transform:scale(.98)}
+  .btn + .btn{margin-top:12px}
+  .step-h{font-weight:700; font-size:16px; margin:0 0 10px; display:flex; align-items:center; gap:8px}
+  .stepnum{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:var(--blue); color:#fff; font-weight:700; font-size:14px; flex:0 0 auto}
+  .step .desc{color:#26303f; font-size:15px; margin:0 0 4px}
+  .shot-img{display:block; width:100%; margin:12px 0 2px; border:1px solid var(--line); border-radius:12px}
+  b{color:var(--ink)}
+  code{background:#eef2fb; border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:13px}
+  .tip{background:#eafaf0; border:1px solid #b6e6c8; border-radius:12px; padding:10px 12px; font-size:13.5px; color:#1c6b40; margin-top:12px}
+  .wip{background:#fff8e6; border:1px solid #f3e2ad; border-radius:12px; padding:16px; font-size:15px; color:#6b5a1e; text-align:center}
+  .change{display:inline-block; margin-bottom:14px; font-size:14px; color:var(--blue-d); cursor:pointer; font-weight:600}
+  .hidden{display:none !important}
+  .foot{text-align:center; color:var(--muted); font-size:12px; margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🔄 Обновление «Заправыч»</h1>
+  <p class="sub">Когда выходит новая версия — обновись, это быстро. Бот подскажет, когда пора.</p>
+
+  <!-- ВЫБОР ПЛАТФОРМЫ -->
+  <div id="chooser">
+    <div class="card">
+      <p class="step-h">📱 Какой у тебя телефон?</p>
+      <button class="btn" onclick="pick('ios')">📱 У меня iPhone</button>
+      <button class="btn" style="background:linear-gradient(180deg,#5a6b8c,#46556f);box-shadow:0 8px 20px rgba(70,85,111,.3)" onclick="pick('android')">🤖 У меня Android</button>
+    </div>
+  </div>
+
+  <span class="change hidden" id="change" onclick="reset()">← выбрать другой телефон</span>
+
+  <!-- iOS -->
+  <div id="ios" class="hidden">
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">1</span> Открой меню расширений</p>
+      <p class="desc">В Safari тапни значок настроек страницы — слева в адресной строке.</p>
+      <img class="shot-img" src="scr2/1.png" alt="Шаг 1" loading="lazy">
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">2</span> Выбери Userscripts</p>
+      <p class="desc">В открывшемся меню нажми <b>Userscripts</b>.</p>
+      <img class="shot-img" src="scr2/2.png" alt="Шаг 2" loading="lazy">
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">3</span> Открой «Обновления»</p>
+      <p class="desc">В окне Userscripts нажми значок <b>облака ☁️</b> (вверху слева).</p>
+      <img class="shot-img" src="scr2/3.jpg" alt="Шаг 3" loading="lazy">
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">4</span> Проверь обновления</p>
+      <p class="desc">Нажми <b>«Check Updates»</b> — Userscripts проверит, есть ли свежая версия.</p>
+      <img class="shot-img" src="scr2/4.jpg" alt="Шаг 4" loading="lazy">
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">5</span> Обнови «Заправыч»</p>
+      <p class="desc">Появится <b>Заправыч</b> с кнопкой <b>«Update»</b> — тапни её.</p>
+      <img class="shot-img" src="scr2/5.jpg" alt="Шаг 5" loading="lazy">
+      <div class="tip">✅ Готово! Закрой меню (синяя галочка) и переоткрой миниапп — версия обновится. В боте придёт «▶️ Скрипт запущен» с новой версией.</div>
+    </div>
+
+  </div>
+
+  <!-- Android -->
+  <div id="android" class="hidden">
+    <div class="card">
+      <p class="step-h">🤖 Обновление на Android</p>
+      <div class="wip">🛠 Инструкция в разработке.<br><br>Обычно Tampermonkey обновляет скрипт <b>сам</b> в фоне. Если нужно вручную — открой Tampermonkey → раздел скриптов → «Проверить обновления».</div>
+    </div>
+  </div>
+
+  <p class="foot">Вопросы — к тому, кто дал ссылку.</p>
+
+</div>
+
+<script>
+(function(){
+  var PKEY='qrPlatform';
+  function show(p){
+    document.getElementById('chooser').classList.add('hidden');
+    document.getElementById('ios').classList.toggle('hidden', p!=='ios');
+    document.getElementById('android').classList.toggle('hidden', p!=='android');
+    document.getElementById('change').classList.remove('hidden');
+    try{ localStorage.setItem(PKEY,p); }catch(e){}
+    window.scrollTo(0,0);
+  }
+  window.pick=function(p){ show(p); };
+  window.reset=function(){
+    try{ localStorage.removeItem(PKEY); }catch(e){}
+    document.getElementById('ios').classList.add('hidden');
+    document.getElementById('android').classList.add('hidden');
+    document.getElementById('change').classList.add('hidden');
+    document.getElementById('chooser').classList.remove('hidden');
+    window.scrollTo(0,0);
+  };
+  try{ var s=localStorage.getItem(PKEY); if(s==='ios'||s==='android') show(s); }catch(e){}
+})();
+</script>
+</body>
+</html>
