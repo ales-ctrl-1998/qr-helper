@@ -113,25 +113,22 @@
 
 <script>
 (function(){
-  var PKEY='qrPlatform';
+  // выбор НЕ запоминаем — страница всегда спрашивает платформу
   function show(p){
     document.getElementById('chooser').classList.add('hidden');
     document.getElementById('ios').classList.toggle('hidden', p!=='ios');
     document.getElementById('android').classList.toggle('hidden', p!=='android');
     document.getElementById('change').classList.remove('hidden');
-    try{ localStorage.setItem(PKEY,p); }catch(e){}
     window.scrollTo(0,0);
   }
   window.pick=function(p){ show(p); };
   window.reset=function(){
-    try{ localStorage.removeItem(PKEY); }catch(e){}
     document.getElementById('ios').classList.add('hidden');
     document.getElementById('android').classList.add('hidden');
     document.getElementById('change').classList.add('hidden');
     document.getElementById('chooser').classList.remove('hidden');
     window.scrollTo(0,0);
   };
-  try{ var s=localStorage.getItem(PKEY); if(s==='ios'||s==='android') show(s); }catch(e){}
 })();
 </script>
 </body>
