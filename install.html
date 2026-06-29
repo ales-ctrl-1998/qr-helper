@@ -63,6 +63,14 @@
   .warnbar b{color:#9b1c1c}
   .warnbar ul{margin:7px 0 0;padding-left:18px} .warnbar li{margin:3px 0}
   .warnbar.hot{background:#ffe1e1;border-color:#e58a8a;box-shadow:0 6px 18px rgba(200,60,60,.18)}
+  .ovl{position:fixed;inset:0;background:rgba(15,23,37,.74);backdrop-filter:blur(3px);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:22px 14px;overflow:auto}
+  .ovl[hidden]{display:none}
+  .ovl-card{background:#fff;border-radius:20px;max-width:460px;width:100%;padding:22px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 20px 60px rgba(20,30,60,.45);margin:auto}
+  .ovl-card h2{margin:0 0 10px;font-size:21px;color:#9b1c1c}
+  .ovl-card p{margin:0 0 12px;font-size:15px;color:#26303f;line-height:1.5}
+  .ovl-shot{display:block;width:100%;border:1px solid var(--line);border-radius:14px;margin:6px 0 4px}
+  .ovl-steps{background:#f3f6fd;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;color:#26303f}
+  .ovl-dismiss{display:inline-block;margin-top:14px;color:#8a97b2;font-size:13px;text-decoration:underline;cursor:pointer}
 </style>
 </head>
 <body>
@@ -296,6 +304,49 @@
     if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(CODE).then(flashOk).catch(legacyCopy);
     else legacyCopy();
   });
+})();
+</script>
+<div class="ovl" id="ovl" hidden>
+  <div class="ovl-card">
+    <h2>⚠️ Открой страницу в браузере</h2>
+    <p>Сейчас она открыта во <b>встроенном браузере Telegram</b> — отсюда <b>нельзя скачать файл скрипта</b>. Открой её в Safari/Chrome.</p>
+    <div id="ovl-ios">
+      <p>На iPhone нажми внизу значок <b>«Поделиться» (⤴)</b> → выбери <b>«Открыть в Safari»</b>:</p>
+      <img class="ovl-shot" src="scr4/1.png" alt="Открыть в Safari" loading="lazy">
+    </div>
+    <div id="ovl-android" hidden>
+      <div class="ovl-steps">На Android нажми вверху справа <b>⋮</b> → <b>«Открыть в браузере»</b> (Chrome).</div>
+    </div>
+    <span class="ovl-dismiss" id="ovl-x">Я уже в браузере — продолжить</span>
+  </div>
+</div>
+<script>
+(function(){
+  function inApp(){
+    var ua=navigator.userAgent||'';
+    if(window.TelegramWebviewProxy||window.TelegramWebviewProxyProto) return true;
+    if(/Telegram|FBAN|FBAV|Instagram|Line\/|WhatsApp|Snapchat|MicroMessenger/i.test(ua)) return true;
+    var iOS=/iPhone|iPad|iPod/i.test(ua);
+    if(iOS){
+      var realSafari=/Version\/[\d.]+ Mobile\/\w+ Safari/i.test(ua);
+      var otherBrowser=/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+      var standalone=('standalone' in navigator)&&navigator.standalone;
+      if(!realSafari && !otherBrowser && !standalone) return true;
+    }
+    if(/Android/i.test(ua)&&/; wv\)/i.test(ua)) return true;
+    return false;
+  }
+  try{
+    if(inApp()){
+      var ua=navigator.userAgent||'', iOS=/iPhone|iPad|iPod/i.test(ua);
+      var oi=document.getElementById('ovl-ios'), oa=document.getElementById('ovl-android');
+      if(oi) oi.hidden=!iOS; if(oa) oa.hidden=iOS;
+      var ovl=document.getElementById('ovl'); if(ovl) ovl.hidden=false;
+      var wb=document.getElementById('warnbar'); if(wb) wb.classList.add('hot');
+    }
+    var x=document.getElementById('ovl-x');
+    if(x) x.onclick=function(){ var o=document.getElementById('ovl'); if(o) o.hidden=true; };
+  }catch(e){}
 })();
 </script>
 </body>
