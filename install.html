@@ -169,8 +169,61 @@
 
     <div class="card step">
       <p class="step-h"><span class="stepnum">9</span> Открыть миниапп</p>
-      <p class="desc">В чате бота нажми кнопку запуска приложения (<b>«Открыть»</b> / кнопка снизу). Откроется страница получения QR, а внизу появится <b>панель скрипта</b>.</p>
-      <p class="desc">📍 Пока на этом всё. Как пользоваться панелью (вписать номер авто, топливо, код привязки) — расскажем в следующем разделе.</p>
+      <p class="desc">В чате бота нажми кнопку запуска приложения (<b>«Открыть»</b> / кнопка снизу).</p>
+      <img class="shot-img" src="scr5/1.jpg" alt="Открыть миниапп" loading="lazy">
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">10</span> Поделиться номером</p>
+      <p class="desc">Нажми <b>«Поделиться»</b> — пройдёт авторизация по номеру телефона на сайте СевТех.</p>
+      <img class="shot-img" src="scr5/2.jpg" alt="Поделиться номером" loading="lazy">
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">11</span> Верификация</p>
+      <p class="desc">При первом заходе скрипт запросит <b>код верификации</b>. Введи свой код <b id="vcode">(показан вверху этой страницы или в боте «Заправыч»)</b> и нажми <b>«Подключить»</b>.</p>
+      <img class="shot-img" src="scr5/3.jpg" alt="Ввод кода верификации" loading="lazy">
+    </div>
+
+    <div class="card step">
+      <p class="step-h"><span class="stepnum">12</span> Номер авто и топливо</p>
+      <p class="desc">В открывшемся окне введи <b>госномер</b> своего авто и выбери <b>топливо</b>. Рекомендуем выбрать <b>несколько видов</b> — так выше шанс успеха. Жми по очереди: порядок нажатий = приоритет. Затем <b>«Старт»</b>.</p>
+      <img class="shot-img" src="scr5/4.jpg" alt="Номер авто и выбор топлива" loading="lazy">
+    </div>
+
+    <div class="card step" style="background:#eaf7ee;border-color:#bfe3cf">
+      <p class="step-h">✅ Готово!</p>
+      <p class="desc">Если всё сделано верно — появится бейдж <b>«⌛ жду топливо…»</b>.</p>
+      <img class="shot-img" src="scr5/5.jpg" alt="Жду топливо" loading="lazy">
+      <p class="desc">Когда в раздаче появится топливо, скрипт сам попробует взять код. После успеха <b>ссылка на QR придёт тебе в бота «Заправыч»</b> в Telegram.</p>
+    </div>
+
+    <div class="card step" style="background:#fff8e6;border-color:#f3e2ad">
+      <p class="step-h">📌 Важные рекомендации</p>
+      <ol>
+        <li>Запускай скрипт <b>за ~5 минут</b> до начала раздачи — чтобы сессия была свежей.</li>
+        <li><b>Не перезагружай страницу</b> и не закрывай вкладку с миниаппом — скрипт работает именно в ней.</li>
+        <li>Держи телефон <b>с интернетом</b> и не давай экрану гаснуть надолго — фоновая вкладка может «засыпать».</li>
+        <li>Расширение <b>Userscripts должно быть включено</b> (если выключал после прошлого раза — включи заранее).</li>
+        <li><b>Один код = один браузер.</b> Не запускай тот же код одновременно на нескольких устройствах.</li>
+        <li>Если бот напишет про обновление — <b>обнови скрипт заранее</b>, не в момент раздачи.</li>
+      </ol>
+    </div>
+
+    <div class="card step">
+      <p class="step-h">🧭 Кнопки панели</p>
+
+      <p class="desc"><b>📱 номер</b> — повторно отправить номер телефона (если слетела авторизация в MAX).</p>
+      <img class="shot-img" src="scr5/6.jpg" alt="Кнопка «номер» (телефон)" loading="lazy">
+
+      <p class="desc" style="margin-top:14px"><b>🎫 код</b> — посмотреть полученный QR-код (если он уже получен).</p>
+      <img class="shot-img" src="scr5/7.jpg" alt="Кнопка «код»" loading="lazy">
+
+      <p class="desc" style="margin-top:14px"><b>🚗 номер</b> — посмотреть или изменить номер авто и топливо.</p>
+      <img class="shot-img" src="scr5/8.jpg" alt="Кнопка «номер» (авто)" loading="lazy">
+
+      <p class="desc" style="margin-top:14px"><b>✈️ TG</b> — код верификации (вводится при первом запуске). Галочка <b>✓</b> значит привязка к боту есть.</p>
+      <img class="shot-img" src="scr5/9.jpg" alt="Кнопка «TG»" loading="lazy">
     </div>
 
     <div class="card step" style="background:#fff8e6;border-color:#f3e2ad">
@@ -247,7 +300,7 @@
   // код привязки из ?tg=
   try {
     var tg=(new URLSearchParams(location.search).get('tg')||'').replace(/[^a-zA-Z0-9]/g,'');
-    if(tg){ document.getElementById('tgcode').textContent=tg; document.getElementById('tgcard').classList.remove('hidden'); }
+    if(tg){ document.getElementById('tgcode').textContent=tg; document.getElementById('tgcard').classList.remove('hidden'); var v=document.getElementById('vcode'); if(v) v.textContent=tg; }
   } catch(e){}
 
   // выбор платформы
