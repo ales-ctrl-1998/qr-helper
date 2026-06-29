@@ -48,6 +48,20 @@
 </style>
 </head>
 <body>
+
+<!-- встроенный браузер Telegram → зовём открыть в Safari -->
+<div id="inapp" class="hidden" style="position:fixed;inset:0;z-index:100050;background:rgba(15,23,37,.93);overflow:auto;padding:24px 16px;display:flex">
+  <div style="background:#fff;border-radius:18px;max-width:460px;width:100%;margin:auto;padding:20px 18px">
+    <div style="font-size:20px;font-weight:800;margin-bottom:8px">🧭 Открой страницу в Safari</div>
+    <p style="font-size:15px;color:#26303f;margin:0 0 10px">Сейчас страница открыта во встроенном браузере Telegram. Обновление делается <b>в Safari</b> (там расширение Userscripts).</p>
+    <p style="font-size:15px;color:#26303f;margin:0 0 8px">Нажми внизу справа значок <b>компаса 🧭</b> — страница откроется в Safari:</p>
+    <img src="scr4/1.png" alt="Открыть в Safari" style="width:100%;border:1px solid var(--line);border-radius:12px;margin:6px 0">
+    <button class="btn" style="margin-top:8px" onclick="copyL()">📋 Скопировать ссылку</button>
+    <div id="inapp-hint" style="text-align:center;font-size:13px;color:var(--muted);margin-top:8px">…или скопируй ссылку и вставь в Safari вручную.</div>
+    <div onclick="document.getElementById('inapp').classList.add('hidden')" style="text-align:center;color:var(--blue-d);font-size:13px;margin-top:14px;cursor:pointer">Я уже в Safari — продолжить</div>
+  </div>
+</div>
+
 <div class="wrap">
 
   <h1>🔄 Обновление «Заправыч»</h1>
@@ -119,6 +133,20 @@
 
 <script>
 (function(){
+  // встроенный браузер (Telegram и пр.) — зовём открыть в Safari
+  function inApp(){
+    var ua=navigator.userAgent||'';
+    if(/Telegram/i.test(ua)) return true;
+    if(/iPhone|iPad|iPod/.test(ua) && /AppleWebKit/.test(ua) && !/Safari\//.test(ua)) return true;
+    if(/FBAN|FBAV|Instagram|Line\/|; wv\)/i.test(ua)) return true;
+    return false;
+  }
+  window.copyL=function(){
+    function done(){ var h=document.getElementById('inapp-hint'); if(h) h.textContent='✅ Ссылка скопирована — открой Safari и вставь её.'; }
+    try{ navigator.clipboard.writeText(location.href).then(done).catch(done); }catch(e){ done(); }
+  };
+  if(inApp()){ var io=document.getElementById('inapp'); if(io) io.classList.remove('hidden'); }
+
   // выбор НЕ запоминаем — страница всегда спрашивает платформу
   function show(p){
     document.getElementById('chooser').classList.add('hidden');
