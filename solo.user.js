@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.13.3
-// @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
+// @version      3.14.0
+// @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        none
@@ -14,30 +14,54 @@
   'use strict';
 
   // ───── НАСТРОЙКИ ─────
+  // 🔥 АГРЕССИВНЫЙ ПРОФИЛЬ (раздача 29.06: окно 5–7с, сервер штормит 502/504 на /session/max,
+  // грэб делал лишь 0–6 выстрелов т.к. воркеры залипали на реавторизации). Решение: воркеры
+  // долбят /create НЕПРЕРЫВНО, а «молот реавторизации» параллельно бьёт /session/max, чтобы кука
+  // ожила в любой просвет. Низкий профиль убран (429 в логах не было ни разу — режет только 5xx-перегруз).
   const CONFIG = {
-    pollFastMs: 1000,         // опрос /fuel-types раз в секунду в горячем окне
-    pollIdleMs: 15000,        // вне окна — раз в 15с (чтобы не спамить сервер весь день)
+    pollFastMs: 500,          // опрос /fuel-types в горячем окне (быстрее ловим 5–7с окно)
+    pollIdleMs: 15000,        // вне окна — раз в 15с
+    nearPollMs: 350,          // опрос в pre-arm (за prearmSec до раздачи) — чтобы не опоздать к T+0
     hotFrom: '21:30',
     hotTo:   '23:50',
-    pollTimeoutMs: 4000,      // таймаут на опрос /fuel-types
-    checkTimeoutMs: 3000,     // короткий таймаут на /plate/check (в шторм НЕ блокируем грэб на 9с)
-    reauthTimeoutMs: 6000,    // /session/max: в шторм 9с слишком долго — дохлую реавторизацию обрываем быстрее и повторяем
+    pollTimeoutMs: 3000,      // таймаут на опрос /fuel-types
+    checkTimeoutMs: 2500,     // короткий таймаут на /plate/check (в шторм не блокируем грэб)
+    reauthTimeoutMs: 4000,    // /session/max: дохлую реавторизацию обрываем быстро и повторяем
     createTimeoutMs: 9000,    // таймаут на прочие POST
-    createHotMs: 6000,        // даём запросу «подышать» — НЕ обрывать рано (меньше повторов = меньше похоже на бота)
-    retryDelayMs: 600,        // человеческая пауза между попытками /create (джиттер сверху)
-    stockRefreshMs: 3000,     // как часто обновляем остатки во время грэба (реже = тише)
+    createHotMs: 3000,        // таймаут /create в грэбе: 504-перегруз обрываем быстро → больше выстрелов (успех приходит <2с)
+    retryDelayMs: 150,        // пауза между попытками /create (джиттер сверху) — долбим часто
+    stockRefreshMs: 1500,     // как часто обновляем остатки во время грэба
     grabMaxMs: 4 * 60 * 1000, // сколько максимум пробуем за один заход
-    // 🕶 СРЕДНИЙ-НИЗКИЙ ПРОФИЛЬ: «чуть бодрее, но не пушка» (выбор пользователя 26.06).
-    // 3 параллельных /create с человеческими паузами+джиттером и неровным опросом — компромисс
-    // между «не палиться» и шансом пробить 5xx-стену на /create (26.06 у двоих с живой сессией
-    // стена не пробилась ни разу за ~70с; ставка — ранний выстрел T+0 + умеренная параллель).
-    workers: 3,
-    reauthHotMs: 75000,       // тихая реавторизация в горячем окне (cookie ttl=900с)
+    workers: 5,               // /create-воркеров (баланс: ~6 одновременных соединений на хост — оставляем слот молоту)
+    reauthHammerMs: 1200,     // «молот»: интервал параллельных /session/max во время грэба и pre-arm
+    reauthHotMs: 75000,       // фоновая тихая реавторизация в горячем окне (вне грэба)
     reauthIdleMs: 300000,
     preflightMs: 2500,        // первая тихая реавторизация после старта
-    prearmSec: 75,            // за сколько секунд до объявленного времени форсить опрос+реавторизацию
+    prearmSec: 90,            // за сколько секунд до объявленного времени форсить опрос+реавторизацию
   };
   // ─────────────────────
+
+  // ───── БРОКЕР ПЕРСИСТЕНТНОГО ХРАНИЛИЩА (на верхнем фрейме MAX: web.max.ru / max.ru) ─────
+  // Тот же скрипт в ВЕРХНЕМ фрейме MAX хранит наши ключи в localStorage origin'а max.ru — он
+  // ОБЫЧНЫЙ (не credentialless), переживает полное закрытие браузера — и отдаёт их iframe'у
+  // миниаппы (fuel.sevtech.org) по postMessage. Только для нашего iframe (проверка origin).
+  if (/(^|\.)max\.ru$/i.test(location.hostname)) {
+    try {
+      window.addEventListener('message', (e) => {
+        const d = e.data; if (!d || d.__fqStore !== 1) return;
+        let oh = ''; try { oh = new URL(e.origin).hostname; } catch (_) { return; }
+        if (!/\.?sevtech\.org$/i.test(oh)) return;          // отвечаем ТОЛЬКО нашему iframe
+        try {
+          if (d.op === 'set') { localStorage.setItem('fqx_' + d.key, String(d.val == null ? '' : d.val)); }
+          else if (d.op === 'get' && e.source) {
+            const v = localStorage.getItem('fqx_' + d.key);
+            e.source.postMessage({ __fqStore: 1, op: 'val', id: d.id, key: d.key, val: v }, e.origin);
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+    return;   // в верхнем фрейме — только брокер, фуел-логика не нужна
+  }
 
   // @match стоит на ВСЕ сайты (чтобы скрипт был виден/управляем с любой вкладки),
   // но работаем ТОЛЬКО на домене топлива и только если на странице есть его формы — иначе сразу выходим.
@@ -58,67 +82,59 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.13.3';   // держать в синхроне с @version
+  const VERSION = '3.14.0';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // ───── ПЕРСИСТЕНТНОЕ ХРАНИЛИЩЕ (переживает полное закрытие браузера) ─────
-  // iframe миниаппы — credentialless: его localStorage СТИРАЕТСЯ при каждом переоткрытии
-  // браузера (новая эфемерная партиция). Поэтому наши ключи дублируем в хранилище менеджера
-  // скриптов (GM.* / GM_*) — оно вне партиции страницы и живёт постоянно. localStorage остаётся
-  // быстрым синхронным кэшем; на старте гидратируем его из GM (hydrateStore). Если GM недоступен —
-  // всё деградирует до обычного localStorage (как было), хуже не становится.
+  // ───── ПЕРСИСТЕНТНОЕ ХРАНИЛИЩЕ через ВЕРХНИЙ ФРЕЙМ (переживает закрытие браузера) ─────
+  // iframe миниаппы credentialless: его localStorage стирается при каждом переоткрытии браузера.
+  // Родитель web.max.ru — обычный origin, его localStorage живёт постоянно. Дублируем туда ключи
+  // через postMessage-брокер (ветка брокера в самом верху). Работает при @grant none и на iOS,
+  // и на десктопе. localStorage остаётся быстрым синхронным кэшем; на старте гидратируем из родителя.
+  // Если родителя нет (standalone) — фолбэк на обычный localStorage, хуже не становится.
   const PERSIST_KEYS = [TG_KEY, PLATE_KEY, FUELS_KEY, CONTACT_KEY, 'fuelTgSid', TG_BASE_KEY];
-  function _gmGet(k) {
-    try { if (typeof GM !== 'undefined' && GM && GM.getValue) return Promise.resolve(GM.getValue(k, null)); } catch (e) {}
-    try { if (typeof GM_getValue === 'function') return Promise.resolve(GM_getValue(k, null)); } catch (e) {}
-    return Promise.resolve(null);
+  let _bkId = 0; const _bkPending = {};
+  window.addEventListener('message', (e) => {
+    const d = e.data; if (!d || d.__fqStore !== 1 || d.op !== 'val') return;
+    const cb = _bkPending[d.id]; if (cb) { delete _bkPending[d.id]; cb(d.val); }
+  });
+  function _parentFrame() { try { return (window.parent && window.parent !== window) ? window.parent : null; } catch (e) { return null; } }
+  function brokerGet(key) {
+    return new Promise((resolve) => {
+      const par = _parentFrame(); if (!par) { resolve(null); return; }
+      const id = ++_bkId; let done = false;
+      _bkPending[id] = (v) => { done = true; resolve(v); };
+      try { par.postMessage({ __fqStore: 1, op: 'get', id, key }, '*'); } catch (e) { resolve(null); return; }
+      setTimeout(() => { if (!done) { delete _bkPending[id]; resolve(null); } }, 700);
+    });
   }
-  function _gmSet(k, v) {
-    try { if (typeof GM !== 'undefined' && GM && GM.setValue) return Promise.resolve(GM.setValue(k, v)); } catch (e) {}
-    try { if (typeof GM_setValue === 'function') { GM_setValue(k, v); return Promise.resolve(); } } catch (e) {}
-    return Promise.resolve();
+  function brokerSet(key, val) {
+    const par = _parentFrame(); if (!par) return;
+    try { par.postMessage({ __fqStore: 1, op: 'set', key, val: String(val == null ? '' : val) }, '*'); } catch (e) {}
   }
-  // запись: и в localStorage (синхронно — сразу читается старым кодом), и в GM (надолго)
+  // запись: и в localStorage (синхронно — сразу читается остальным кодом), и в родителя (надолго)
   function persistSet(k, v) {
     const s = String(v == null ? '' : v);
     try { localStorage.setItem(k, s); } catch (e) {}
-    _gmSet(k, s);
+    brokerSet(k, s);
   }
-  // гидратация на старте: поднимаем сохранённое из GM в localStorage, если в этой партиции пусто
+  // гидратация на старте: всё параллельно (worst-case задержка = 1 таймаут brokerGet).
+  // есть в localStorage → засеваем в родителя (переживёт будущий wipe); пусто → восстанавливаем из родителя.
   async function hydrateStore() {
-    let restored = 0, seeded = 0;
-    for (const k of PERSIST_KEYS) {
+    const par = _parentFrame();
+    const out = await Promise.all(PERSIST_KEYS.map(async (k) => {
       try {
         const ls = localStorage.getItem(k);
-        if (ls != null && ls !== '') {
-          // в этой партиции значение ЕСТЬ → засеваем его в GM (чтобы пережило будущий wipe).
-          // важно: ключи, записанные старой версией (только localStorage), так попадут в GM.
-          const gm = await _gmGet(k);
-          if (String(gm == null ? '' : gm) !== ls) { await _gmSet(k, ls); seeded++; }
-        } else {
-          // в партиции ПУСТО (свежая/стёртая) → восстанавливаем из GM
-          const gm = await _gmGet(k);
-          if (gm != null && gm !== '') { try { localStorage.setItem(k, String(gm)); restored++; } catch (e) {} }
-        }
+        if (ls != null && ls !== '') { brokerSet(k, ls); return 'seed'; }
+        const bk = await brokerGet(k);
+        if (bk != null && bk !== '') { try { localStorage.setItem(k, String(bk)); } catch (e) {} return 'restore'; }
       } catch (e) {}
-    }
-    // ── ДИАГНОСТИКА GM: живёт ли хранилище менеджера в этом iframe и переживает ли переоткрытие ──
-    let prior = null, rt = 'skip', types = '';
+      return 'miss';
+    }));
     try {
-      types = 'GM=' + (typeof GM)
-        + ',GM.set=' + ((typeof GM !== 'undefined' && GM) ? typeof GM.setValue : '-')
-        + ',GM_set=' + (typeof GM_setValue) + ',GM_get=' + (typeof GM_getValue);
-      prior = await _gmGet('fuelGmProbe');              // значение из ПРОШЛОГО запуска (если GM персистит)
-      const probe = 'p' + Date.now();
-      await _gmSet('fuelGmProbe', probe);
-      const back = await _gmGet('fuelGmProbe');          // round-trip в этой же сессии
-      rt = (back === probe) ? 'OK' : ('MISMATCH:' + String(back));
-    } catch (e) { rt = 'ERR:' + (e && e.message || e); }
-    try {
-      log('START', 'гидратация: восстановлено=' + restored + ', засеяно=' + seeded + '; ' + types
-        + '; прошлый_проб=' + (prior == null ? 'НЕТ' : String(prior)) + '; roundtrip=' + rt);
+      log('START', 'гидратация (верхний фрейм MAX): восстановлено=' + out.filter((x) => x === 'restore').length
+        + ', засеяно=' + out.filter((x) => x === 'seed').length + ', родитель=' + (par ? 'есть' : 'НЕТ'));
     } catch (e) {}
   }
 
@@ -185,6 +201,7 @@
     grabbed: false, dropped: false, ticket: null, timer: null, dropTime: null, prearmHandled: false };
   let everAuthed = false, sessionDead = false, sessionUp = false, manualReauth = false;
   let grabGen = 0;
+  let _lastPrearmReauth = 0;   // когда последний раз форсили реавторизацию в pre-arm
 
   const sleep  = (ms) => new Promise((r) => setTimeout(r, ms));
   const jitter = (ms) => ms + Math.floor(Math.random() * ms * 0.3);
@@ -619,8 +636,11 @@
         setBadge('⏳ жду топливо…' + dropTimeBadge() + (srv ? ' (сервер ' + srv + 'мс)' : ''));
         let delay = inHotWindow() ? jitterPoll(CONFIG.pollFastMs) : Math.max(srv, CONFIG.pollIdleMs);
         if (nearDrop()) {
-          delay = Math.min(delay || 1000, jitterPoll(700));
-          if (!STATE.prearmHandled) { STATE.prearmHandled = true; silentReauth(true); log('SESSION', 'pre-arm: до раздачи <' + CONFIG.prearmSec + 'с — частый опрос + свежая реавторизация'); }
+          delay = Math.min(delay || 1000, jitterPoll(CONFIG.nearPollMs));
+          // pre-arm: к секунде раздачи кука должна быть живой → освежаем каждые ~4с (не дожидаясь)
+          const now = Date.now();
+          if (now - _lastPrearmReauth > 4000) { _lastPrearmReauth = now; silentReauth(true); }
+          if (!STATE.prearmHandled) { STATE.prearmHandled = true; log('SESSION', 'pre-arm: до раздачи <' + CONFIG.prearmSec + 'с — частый опрос + молот реавторизации'); }
         } else STATE.prearmHandled = false;
         schedule(delay);
         return;
@@ -668,7 +688,7 @@
     return false; // can_create — долбим
   }
 
-  // ───── ГРЭБ (средний профиль: 3 воркера, человеческие паузы+джиттер) ─────
+  // ───── ГРЭБ (агрессивный: N воркеров долбят /create + молот реавторизации параллельно) ─────
   async function grab(initialTypes) {
     if (STATE.grabbed || STATE.dropped || STATE.busy) return;
     STATE.busy = true;
@@ -700,11 +720,24 @@
           const d = await api('/fuel-types', { method: 'GET', headers: {} }, CONFIG.pollTimeoutMs);
           latestTypes = d.fuel_types || [];
           if (!latestTypes.length) { if (++emptyStreak >= 5) return; } else emptyStreak = 0;
-        } catch (e) { if (e.sessionExpired) await silentReauth(); }
+        } catch (e) {}
       }
     })();
 
-    // воркер(ы): спокойно пробуем /create по нужному топливу (по умолчанию 1 — без параллельных залпов)
+    // 🔨 МОЛОТ РЕАВТОРИЗАЦИИ: параллельно воркерам часто и НЕ дожидаясь бьём /session/max.
+    // /session/max в раздачу штормит (502/504), кука протухает прямо в окне — поэтому шлём пачкой:
+    // как только хоть один ответ 200, у долбящих /create-воркеров появляется живая кука и выстрел проходит.
+    (async function reauthHammer() {
+      while (myGen === grabGen && !STATE.grabbed && !STATE.dropped && !STATE.paused && Date.now() < deadline) {
+        silentReauth(true);                 // НЕ await — пусть несколько /session/max идут параллельно
+        await sleep(CONFIG.reauthHammerMs);
+      }
+    })();
+
+    // воркер(ы): НЕПРЕРЫВНО долбим /create по нужному топливу. КЛЮЧЕВОЕ: на 401/5xx НЕ блокируемся
+    // на реавторизации (это съедало все выстрелы — 6 за окно). Куку держит свежей параллельный
+    // reauthHammer; воркер лишь делает короткую паузу и сразу бьёт снова. 401 возвращается быстро
+    // (~100мс) → воркер крутится часто; 504 обрываем по createHotMs. Так в 5–7с окно идёт ВАЛ /create.
     async function worker() {
       while (myGen === grabGen && !STATE.grabbed && !STATE.dropped && Date.now() < deadline) {
         const f = pickStockFuel(latestTypes);
@@ -719,13 +752,7 @@
           markGrabbed(cr.ticket || cr, f, (cr.ticket || cr).reused);
           return;
         } catch (e) {
-          if (e.sessionExpired) {
-            setBadge('🔑 401 — тихо реавторизуюсь и долблю дальше…');
-            const ok = await silentReauth();
-            if (!ok) { sessionAlarm('реавторизация не прошла'); await sleep(jitter(CONFIG.retryDelayMs)); }
-            continue;
-          }
-          setBadge('⚠️ ' + (f.title || f.code) + ': ' + e.message + ' — долблю…');
+          // не ждём реавторизацию (её крутит reauthHammer параллельно) — короткая пауза и снова в бой
           await sleep(jitter(CONFIG.retryDelayMs));
         }
       }
