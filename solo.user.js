@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.12.1
+// @version      3.12.2
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
@@ -58,7 +58,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.12.1';   // держать в синхроне с @version
+  const VERSION = '3.12.2';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -354,6 +354,22 @@
     let s = String(v || '').trim().toUpperCase(), out = '';
     for (const ch of s) { const i = PLATE_LATIN.indexOf(ch); out += i >= 0 ? PLATE_CYR[i] : ch; }
     return out.replace(/[^0-9A-ZА-ЯЁ]/g, '');
+  }
+  // маска госномера РФ: буква · 3 цифры · 2 буквы · 2–3 цифры региона (латиница→кириллица, строго по позициям)
+  function maskPlate(v) {
+    let out = '';
+    for (let ch of String(v || '').toUpperCase()) {
+      const li = PLATE_LATIN.indexOf(ch); if (li >= 0) ch = PLATE_CYR[li];
+      const pos = out.length;
+      const isLetter = PLATE_CYR.indexOf(ch) >= 0;
+      const isDigit = ch >= '0' && ch <= '9';
+      if (pos === 0) { if (isLetter) out += ch; }          // буква
+      else if (pos <= 3) { if (isDigit) out += ch; }        // 3 цифры
+      else if (pos <= 5) { if (isLetter) out += ch; }       // 2 буквы
+      else if (pos <= 8) { if (isDigit) out += ch; }        // 2–3 цифры региона
+      if (out.length >= 9) break;
+    }
+    return out;
   }
 
   // ───── MAX WebApp / контакт / тихая реавторизация ─────
@@ -843,7 +859,7 @@
 
       const input = document.createElement('input');
       input.className = 'fq-input'; input.placeholder = 'А123ВС777';
-      input.value = savedPlate; input.maxLength = 12;
+      input.value = maskPlate(savedPlate); input.maxLength = 9;
       input.autocapitalize = 'characters'; input.autocomplete = 'off'; input.spellcheck = false;
 
       const preview = document.createElement('div');
@@ -880,7 +896,14 @@
       cancel.onclick = () => { wrap.remove(); resolve(null); };
       acts.appendChild(go); acts.appendChild(cancel);
 
-      input.addEventListener('input', () => { render(); });
+      input.addEventListener('input', () => {
+        const masked = maskPlate(input.value);
+        if (input.value !== masked) {
+          input.value = masked;
+          try { input.setSelectionRange(masked.length, masked.length); } catch (e) {}
+        }
+        render();
+      });
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !go.disabled) go.click(); });
 
       function render() {
