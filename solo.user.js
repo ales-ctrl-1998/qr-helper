@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.3
+// @version      3.14.4
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -46,16 +46,38 @@
   // ОБЫЧНЫЙ (не credentialless), переживает полное закрытие браузера — и отдаёт их iframe'у
   // миниаппы (fuel.sevtech.org) по postMessage. Только для нашего iframe (проверка origin).
   if (/(^|\.)max\.ru$/i.test(location.hostname)) {
+    // Wake Lock в ВЕРХНЕМ фрейме (он не зажат permissions-policy, в отличие от iframe миниаппы).
+    let _topWake = null, _topWakeWanted = false;
+    async function topWakeOn() {
+      _topWakeWanted = true;
+      try {
+        if (!(navigator.wakeLock && navigator.wakeLock.request)) return false;
+        if (_topWake) return true;
+        if (document.visibilityState !== 'visible') return false;
+        _topWake = await navigator.wakeLock.request('screen');
+        _topWake.addEventListener('release', () => { _topWake = null; });
+        return true;
+      } catch (_) { _topWake = null; return false; }
+    }
+    function topWakeOff() { _topWakeWanted = false; try { if (_topWake) _topWake.release(); } catch (_) {} _topWake = null; }
+    try { document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && _topWakeWanted) topWakeOn(); }); } catch (_) {}
     try {
-      window.addEventListener('message', (e) => {
-        const d = e.data; if (!d || d.__fqStore !== 1) return;
+      window.addEventListener('message', async (e) => {
+        const d = e.data; if (!d) return;
         let oh = ''; try { oh = new URL(e.origin).hostname; } catch (_) { return; }
         if (!/\.?sevtech\.org$/i.test(oh)) return;          // отвечаем ТОЛЬКО нашему iframe
         try {
-          if (d.op === 'set') { localStorage.setItem('fqx_' + d.key, String(d.val == null ? '' : d.val)); }
-          else if (d.op === 'get' && e.source) {
-            const v = localStorage.getItem('fqx_' + d.key);
-            e.source.postMessage({ __fqStore: 1, op: 'val', id: d.id, key: d.key, val: v }, e.origin);
+          if (d.__fqStore === 1) {
+            if (d.op === 'set') { localStorage.setItem('fqx_' + d.key, String(d.val == null ? '' : d.val)); }
+            else if (d.op === 'get' && e.source) {
+              const v = localStorage.getItem('fqx_' + d.key);
+              e.source.postMessage({ __fqStore: 1, op: 'val', id: d.id, key: d.key, val: v }, e.origin);
+            }
+          } else if (d.__fqWake === 1) {
+            let ok = false;
+            if (d.op === 'on') ok = await topWakeOn();
+            else if (d.op === 'off') { topWakeOff(); ok = false; }
+            if (e.source) e.source.postMessage({ __fqWake: 1, op: 'state', id: d.id, ok }, e.origin);
           }
         } catch (_) {}
       });
@@ -82,7 +104,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.3';   // держать в синхроне с @version
+  const VERSION = '3.14.4';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -884,30 +906,54 @@
   // Wake Lock держит экран активным, пока вкладка на ПЕРЕДНЕМ плане (как видео/читалка).
   // Освобождается при сворачивании → при возврате на вкладку перезапрашиваем. Нужен жест юзера —
   // берём на первом тапе и по кнопке. Если API нет (старый iOS) — подсказываем «Автоблокировка→Никогда».
-  let _wakeLock = null, _wakeWanted = false, _wakeBtn = null;
+  let _wakeLock = null, _wakeWanted = false, _wakeBtn = null, _parentWakeOn = false;
   function _wakeSupported() { try { return !!(navigator.wakeLock && navigator.wakeLock.request); } catch (e) { return false; } }
+  function _wakeHeld() { return !!_wakeLock || _parentWakeOn; }
   function updateWakeBtn() {
     if (!_wakeBtn) return;
-    _wakeBtn.textContent = _wakeLock ? '☀️ Экран не гаснет' : (_wakeWanted ? '☀️ Удерживаю экран — тапни' : '🌙 Не давать гаснуть');
-    _wakeBtn.classList.toggle('on', !!_wakeLock);
+    _wakeBtn.textContent = _wakeHeld() ? '☀️ Экран не гаснет' : (_wakeWanted ? '☀️ Удерживаю экран — тапни' : '🌙 Не давать гаснуть');
+    _wakeBtn.classList.toggle('on', _wakeHeld());
+  }
+  // ── мост к верхнему фрейму: Wake Lock в iframe миниаппы запрещён permissions-policy,
+  //    поэтому просим РОДИТЕЛЯ (web.max.ru) удержать экран за всю вкладку ──
+  let _wkId = 0; const _wkPending = {};
+  window.addEventListener('message', (e) => {
+    const d = e.data; if (!d || d.__fqWake !== 1 || d.op !== 'state') return;
+    _parentWakeOn = !!d.ok;
+    const cb = _wkPending[d.id]; if (cb) { delete _wkPending[d.id]; cb(d.ok); }
+    updateWakeBtn();
+  });
+  function parentWake(on) {
+    return new Promise((resolve) => {
+      const par = _parentFrame(); if (!par) { resolve(false); return; }
+      const id = ++_wkId; let done = false;
+      _wkPending[id] = (ok) => { done = true; resolve(ok); };
+      try { par.postMessage({ __fqWake: 1, op: on ? 'on' : 'off', id }, '*'); } catch (e) { resolve(false); return; }
+      setTimeout(() => { if (!done) { delete _wkPending[id]; resolve(false); } }, 1500);
+    });
   }
   async function acquireWake() {
     _wakeWanted = true; updateWakeBtn();
-    if (!_wakeSupported()) return false;
-    if (_wakeLock) return true;
-    if (document.visibilityState !== 'visible') return false;
-    try {
-      _wakeLock = await navigator.wakeLock.request('screen');
-      _wakeLock.addEventListener('release', () => { _wakeLock = null; updateWakeBtn(); });
-      log('UI', '☀️ wake lock получен — экран не гаснет');
-      updateWakeBtn(); return true;
-    } catch (e) { log('UI', 'wake lock не вышел: ' + (e.message || e)); _wakeLock = null; updateWakeBtn(); return false; }
+    if (_wakeHeld()) return true;
+    // 1) пробуем прямо в iframe (обычно запрещено, но вдруг разрешат)
+    if (_wakeSupported() && document.visibilityState === 'visible') {
+      try {
+        _wakeLock = await navigator.wakeLock.request('screen');
+        _wakeLock.addEventListener('release', () => { _wakeLock = null; updateWakeBtn(); });
+        log('UI', '☀️ wake lock (iframe) получен'); updateWakeBtn(); return true;
+      } catch (e) { _wakeLock = null; log('UI', 'wake lock в iframe нельзя (' + (e.name || e.message || e) + ') — прошу верхний фрейм'); }
+    }
+    // 2) просим верхний фрейм web.max.ru (он не зажат permissions-policy)
+    const ok = await parentWake(true);
+    _parentWakeOn = ok; updateWakeBtn();
+    log('UI', ok ? '☀️ экран держит верхний фрейм MAX' : '⚠️ удержать экран не вышло (ни iframe, ни родитель)');
+    return ok;
   }
-  function releaseWake() { _wakeWanted = false; try { if (_wakeLock) _wakeLock.release(); } catch (e) {} _wakeLock = null; updateWakeBtn(); }
-  // перезахват при возврате на вкладку (Wake Lock слетает в фоне) + первый жест активирует его
+  function releaseWake() { _wakeWanted = false; try { if (_wakeLock) _wakeLock.release(); } catch (e) {} _wakeLock = null; if (_parentWakeOn) parentWake(false); _parentWakeOn = false; updateWakeBtn(); }
+  // перезахват при возврате на вкладку (лок слетает в фоне) + первый жест активирует
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && _wakeWanted) acquireWake(); });
-  document.addEventListener('touchend', () => { if (_wakeWanted && !_wakeLock) acquireWake(); }, { passive: true });
-  document.addEventListener('click', () => { if (_wakeWanted && !_wakeLock) acquireWake(); }, { passive: true });
+  document.addEventListener('touchend', () => { if (_wakeWanted && !_wakeHeld()) acquireWake(); }, { passive: true });
+  document.addEventListener('click', () => { if (_wakeWanted && !_wakeHeld()) acquireWake(); }, { passive: true });
 
   function addTopButtons() {
     const tools = document.createElement('div'); tools.className = 'fq-tools'; document.body.appendChild(tools);
@@ -916,11 +962,11 @@
     _wakeBtn.className = 'fq-wake';
     _wakeBtn.title = 'Не давать экрану гаснуть (чтобы скрипт не уснул в раздачу)';
     _wakeBtn.onclick = async () => {
-      if (_wakeLock) { releaseWake(); return; }   // уже держим — тап выключает
-      const ok = await acquireWake();             // ещё нет — этот тап (жест) включает
-      if (!ok && !_wakeSupported()) {
-        await infoDialog('☀️ Экран блокируется', 'Твой браузер не умеет держать экран сам. Поставь вручную:<br><br>'
-          + '<b>Настройки → Экран и яркость → Автоблокировка → Никогда</b> (на время раздачи).<br><br>'
+      if (_wakeHeld()) { releaseWake(); return; }   // уже держим — тап выключает
+      const ok = await acquireWake();               // ещё нет — этот тап (жест) включает
+      if (!ok) {
+        await infoDialog('☀️ Не вышло удержать экран', 'Браузер не дал держать экран автоматически. Поставь вручную на время раздачи:<br><br>'
+          + '<b>Настройки → Экран и яркость → Автоблокировка → Никогда</b><br><br>'
           + 'И держи эту вкладку открытой на переднем плане.');
       }
     };
