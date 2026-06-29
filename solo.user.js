@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.11.5
+// @version      3.11.6
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
-// @match        https://fuel.sevtech.org/*
+// @match        *://*/*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js
@@ -39,6 +39,9 @@
   };
   // ─────────────────────
 
+  // @match стоит на ВСЕ сайты (чтобы скрипт был виден/управляем с любой вкладки),
+  // но работаем ТОЛЬКО на домене топлива и только если на странице есть его формы — иначе сразу выходим.
+  if (!/\.?sevtech\.org$/i.test(location.hostname)) return;
   if (!document.querySelector('[data-out-of-stock-message], [data-wait-message], [data-plate-form]')) return;
 
   const API = '/fuel/qr';
@@ -55,7 +58,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.11.5';   // держать в синхроне с @version
+  const VERSION = '3.11.6';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
