@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.0
+// @version      3.14.1
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -82,7 +82,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.0';   // держать в синхроне с @version
+  const VERSION = '3.14.1';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -202,6 +202,8 @@
   let everAuthed = false, sessionDead = false, sessionUp = false, manualReauth = false;
   let grabGen = 0;
   let _lastPrearmReauth = 0;   // когда последний раз форсили реавторизацию в pre-arm
+  let maxDataStale = false;    // 🔴 /session/max вернул «Данные MAX устарели» → лечит ТОЛЬКО переоткрытие
+  let _staleAlarmAt = 0;
 
   const sleep  = (ms) => new Promise((r) => setTimeout(r, ms));
   const jitter = (ms) => ms + Math.floor(Math.random() * ms * 0.3);
@@ -484,10 +486,17 @@
       try {
         const d = await api('/session/max', { method: 'POST', body: JSON.stringify({
           client_id: clientId(), init_data: w.initData, contact: c, platform: w.platform, version: w.version }) }, CONFIG.reauthTimeoutMs);
-        everAuthed = true; sessionDead = false;
+        everAuthed = true; sessionDead = false; maxDataStale = false;
         log('SESSION', 'тихая реавторизация ok, ttl ' + (d && d.ttl));
         return true;
-      } catch (e) { log('SESSION', 'тихая реавторизация НЕ удалась: ' + (e.message || e)); return false; }
+      } catch (e) {
+        const msg = String(e.message || e);
+        // 🔴 «Данные MAX устарели» — init_data/контакт протухли (открыто слишком давно до раздачи).
+        // Хаммер этого НЕ лечит — спасает ТОЛЬКО переоткрытие миниаппа из бота. Поднимаем флаг + громкий сигнал.
+        if (/устарел|MAX/i.test(msg)) { maxDataStale = true; staleAlarm(); }
+        log('SESSION', 'тихая реавторизация НЕ удалась: ' + msg);
+        return false;
+      }
     })();
     const p = reauthInflight;
     p.finally(() => { if (reauthInflight === p) reauthInflight = null; });
@@ -598,7 +607,8 @@
     const ok = await silentReauth();
     if (!ok) {
       const w = getWebApp();
-      if (!w || typeof w.requestContact !== 'function') sessionAlarm('окно MAX не подключено — ПЕРЕОТКРОЙ миниапп из БОТА MAX (не F5)');
+      if (maxDataStale) staleAlarm();   // протухло — только переоткрытие, остальные подсказки бесполезны
+      else if (!w || typeof w.requestContact !== 'function') sessionAlarm('окно MAX не подключено — ПЕРЕОТКРОЙ миниапп из БОТА MAX (не F5)');
       else if (!loadContact()) sessionAlarm('нет привязанного номера');
       else if (everAuthed || inHotWindow()) sessionAlarm('контакт устарел');
     }
@@ -611,6 +621,29 @@
     alarmShown = true;
     if (inHotWindow()) { beep(); setTimeout(beep, 600); }
     document.title = '🔑 ПРИВЯЖИ НОМЕР';
+  }
+  // 🔴 ГРОМКИЙ сигнал: данные MAX устарели. Главный убийца раздачи 29.06 (открыли миниапп за 1.5ч,
+  // данные протухли в 20:57, раздача 22:30 → 1368× «устарели», сессию поднять нельзя). Лечит ТОЛЬКО
+  // переоткрытие миниаппа из бота MAX. Кричим заметно: красный баннер на весь экран + звук + заголовок.
+  function staleAlarm() {
+    const now = Date.now();
+    setBadge('🔴 ДАННЫЕ MAX УСТАРЕЛИ — ПЕРЕОТКРОЙ миниапп из бота MAX и поделись номером заново!');
+    document.title = '🔴 ПЕРЕОТКРОЙ МИНИАПП';
+    if (now - _staleAlarmAt < 30000) return;   // не спамим чаще раза в 30с
+    _staleAlarmAt = now;
+    if (inHotWindow()) { beep(); setTimeout(beep, 500); setTimeout(beep, 1000); }
+    try {
+      injectStyles();
+      const old = document.getElementById('fuelStale'); if (old) old.remove();
+      const w = document.createElement('div'); w.id = 'fuelStale'; w.className = 'fq-ov center'; w.style.zIndex = '100050';
+      const card = document.createElement('div'); card.className = 'fq-card'; card.style.cssText = 'max-width:420px;border:3px solid #e23b3b';
+      card.innerHTML = '<div class="fq-h" style="color:#e23b3b;font-size:20px">🔴 Данные MAX устарели</div>' +
+        '<div class="fq-sub" style="margin:12px 0 6px">Сессия с MAX протухла — поднять её нельзя, пока не <b>переоткроешь миниапп ИЗ БОТА MAX</b> (не F5) и снова не поделишься номером.<br><br>' +
+        '⚠️ Делай это <b>за 5–10 минут до раздачи</b> — данные MAX живут ограниченное время (≈1 час), если открыть сильно заранее, к раздаче они протухнут.</div>';
+      const btn = document.createElement('button'); btn.className = 'fq-btn ok'; btn.textContent = 'Понял'; btn.style.width = '100%';
+      btn.onclick = () => w.remove();
+      card.appendChild(btn); w.appendChild(card); document.body.appendChild(w);
+    } catch (e) {}
   }
   async function ensureSession() {
     setBadge('🔑 проверяю сессию…');
@@ -729,8 +762,15 @@
     // как только хоть один ответ 200, у долбящих /create-воркеров появляется живая кука и выстрел проходит.
     (async function reauthHammer() {
       while (myGen === grabGen && !STATE.grabbed && !STATE.dropped && !STATE.paused && Date.now() < deadline) {
-        silentReauth(true);                 // НЕ await — пусть несколько /session/max идут параллельно
-        await sleep(CONFIG.reauthHammerMs);
+        if (maxDataStale) {
+          // данные MAX протухли — молот бесполезен (бил бы протухшим init_data → 403-троттл).
+          // кричим «переоткрой» и бьём РЕДКО (вдруг юзер переоткрыл — поймаем свежие данные → 200).
+          staleAlarm();
+          await sleep(3000);
+        } else {
+          silentReauth(true);               // НЕ await — пусть несколько /session/max идут параллельно
+          await sleep(CONFIG.reauthHammerMs);
+        }
       }
     })();
 
