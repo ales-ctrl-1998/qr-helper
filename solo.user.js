@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.12.4
+// @version      3.13.0
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM.setValue
+// @grant        GM.getValue
+// @grant        unsafeWindow
 // @updateURL    https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js
 // @downloadURL  https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/solo.user.js
 // ==/UserScript==
@@ -58,10 +62,47 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.12.4';   // держать в синхроне с @version
+  const VERSION = '3.13.0';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ───── ПЕРСИСТЕНТНОЕ ХРАНИЛИЩЕ (переживает полное закрытие браузера) ─────
+  // iframe миниаппы — credentialless: его localStorage СТИРАЕТСЯ при каждом переоткрытии
+  // браузера (новая эфемерная партиция). Поэтому наши ключи дублируем в хранилище менеджера
+  // скриптов (GM.* / GM_*) — оно вне партиции страницы и живёт постоянно. localStorage остаётся
+  // быстрым синхронным кэшем; на старте гидратируем его из GM (hydrateStore). Если GM недоступен —
+  // всё деградирует до обычного localStorage (как было), хуже не становится.
+  const PERSIST_KEYS = [TG_KEY, PLATE_KEY, FUELS_KEY, CONTACT_KEY, 'fuelTgSid', TG_BASE_KEY];
+  function _gmGet(k) {
+    try { if (typeof GM !== 'undefined' && GM && GM.getValue) return Promise.resolve(GM.getValue(k, null)); } catch (e) {}
+    try { if (typeof GM_getValue === 'function') return Promise.resolve(GM_getValue(k, null)); } catch (e) {}
+    return Promise.resolve(null);
+  }
+  function _gmSet(k, v) {
+    try { if (typeof GM !== 'undefined' && GM && GM.setValue) return Promise.resolve(GM.setValue(k, v)); } catch (e) {}
+    try { if (typeof GM_setValue === 'function') { GM_setValue(k, v); return Promise.resolve(); } } catch (e) {}
+    return Promise.resolve();
+  }
+  // запись: и в localStorage (синхронно — сразу читается старым кодом), и в GM (надолго)
+  function persistSet(k, v) {
+    const s = String(v == null ? '' : v);
+    try { localStorage.setItem(k, s); } catch (e) {}
+    _gmSet(k, s);
+  }
+  // гидратация на старте: поднимаем сохранённое из GM в localStorage, если в этой партиции пусто
+  async function hydrateStore() {
+    let restored = 0;
+    for (const k of PERSIST_KEYS) {
+      try {
+        const has = localStorage.getItem(k);
+        if (has != null && has !== '') continue;        // в партиции уже есть — не трогаем
+        const v = await _gmGet(k);
+        if (v != null && v !== '') { try { localStorage.setItem(k, String(v)); restored++; } catch (e) {} }
+      } catch (e) {}
+    }
+    if (restored) { try { log('START', 'восстановлено из постоянного хранилища ключей: ' + restored); } catch (e) {} }
+  }
 
   // ───── СТИЛЬ UI (светлая «стеклянная» тема) ─────
   function plateHTML(plate, small) {
@@ -176,7 +217,7 @@
   // Код привязки хранится в TG_KEY. Адрес relay-туннеля берём из указателя на GitHub
   // (сервер сам обновляет его при смене туннеля → самолечение). Fire-and-forget, на грэб НЕ влияет.
   function getTgToken() { try { return (localStorage.getItem(TG_KEY) || '').trim(); } catch (e) { return ''; } }
-  function setTgToken(t) { try { localStorage.setItem(TG_KEY, String(t || '').trim()); } catch (e) {} }
+  function setTgToken(t) { persistSet(TG_KEY, String(t || '').trim()); }
   let _relayBase = '', _relayAt = 0;
   async function relayBase() {
     const now = Date.now();
@@ -186,7 +227,7 @@
       const txt = (await r.text()).trim();
       if (/^https:\/\/[a-z0-9.\-]+/i.test(txt)) {
         _relayBase = txt.replace(/\/+$/, ''); _relayAt = now;
-        try { localStorage.setItem(TG_BASE_KEY, _relayBase); } catch (e) {}
+        persistSet(TG_BASE_KEY, _relayBase);
         return _relayBase;
       }
     } catch (e) { log('TG', 'указатель недоступен: ' + (e && e.message || e)); }
@@ -208,7 +249,7 @@
   function getSid() {
     let s = ''; try { s = localStorage.getItem('fuelTgSid') || ''; } catch (e) {}
     if (!s) { s = (Math.random().toString(36) + Math.random().toString(36)).replace(/[^a-z0-9]/g, '').slice(0, 16);
-      try { localStorage.setItem('fuelTgSid', s); } catch (e) {} }
+      persistSet('fuelTgSid', s); }
     return s;
   }
   function verLt(a, b) {   // a старее b?
@@ -373,7 +414,7 @@
   }
   function clientId() { try { return localStorage.getItem('fuelQrClientId') || ''; } catch (e) { return ''; } }
   function loadContact() { try { return JSON.parse(localStorage.getItem(CONTACT_KEY) || 'null'); } catch (e) { return null; } }
-  function saveContact(c) { try { localStorage.setItem(CONTACT_KEY, JSON.stringify(c)); } catch (e) {} }
+  function saveContact(c) { try { persistSet(CONTACT_KEY, JSON.stringify(c)); } catch (e) {} }
   async function waitWebApp(ms) { const t0 = Date.now(); while (!getWebApp() && Date.now() - t0 < ms) await sleep(200); return getWebApp(); }
 
   function installContactSniffer() {
@@ -858,7 +899,7 @@
       go.onclick = () => {
         const plate = normalizePlate(input.value);
         if (!plate || !order.length) return;
-        try { localStorage.setItem(PLATE_KEY, plate); localStorage.setItem(FUELS_KEY, order.join(',')); } catch (e) {}
+        persistSet(PLATE_KEY, plate); persistSet(FUELS_KEY, order.join(','));
         wrap.remove();
         resolve({ plate, fuels: order.slice() });
       };
@@ -956,6 +997,9 @@
     log('START', '=== запуск v3.8-solo (один номер, ручной ввод в панели, опрос раз в сек) ===');
     injectStyles();
     addTopButtons();
+
+    // поднимаем сохранённые код/номер/контакт из постоянного хранилища (переживает закрытие браузера)
+    await hydrateStore();
 
     // ВОРОТА: без валидного кода привязки (и если он занят другим браузером) — НЕ запускаемся
     const cl = await tgEnsureClaim();
