@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.13.0
+// @version      3.13.1
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
@@ -62,7 +62,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.13.0';   // держать в синхроне с @version
+  const VERSION = '3.13.1';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -101,7 +101,22 @@
         if (v != null && v !== '') { try { localStorage.setItem(k, String(v)); restored++; } catch (e) {} }
       } catch (e) {}
     }
-    if (restored) { try { log('START', 'восстановлено из постоянного хранилища ключей: ' + restored); } catch (e) {} }
+    // ── ДИАГНОСТИКА GM: живёт ли хранилище менеджера в этом iframe и переживает ли переоткрытие ──
+    let prior = null, rt = 'skip', types = '';
+    try {
+      types = 'GM=' + (typeof GM)
+        + ',GM.set=' + ((typeof GM !== 'undefined' && GM) ? typeof GM.setValue : '-')
+        + ',GM_set=' + (typeof GM_setValue) + ',GM_get=' + (typeof GM_getValue);
+      prior = await _gmGet('fuelGmProbe');              // значение из ПРОШЛОГО запуска (если GM персистит)
+      const probe = 'p' + Date.now();
+      await _gmSet('fuelGmProbe', probe);
+      const back = await _gmGet('fuelGmProbe');          // round-trip в этой же сессии
+      rt = (back === probe) ? 'OK' : ('MISMATCH:' + String(back));
+    } catch (e) { rt = 'ERR:' + (e && e.message || e); }
+    try {
+      log('START', 'гидратация: восстановлено=' + restored + '; ' + types
+        + '; прошлый_проб=' + (prior == null ? 'НЕТ' : String(prior)) + '; roundtrip=' + rt);
+    } catch (e) {}
   }
 
   // ───── СТИЛЬ UI (светлая «стеклянная» тема) ─────
@@ -994,7 +1009,7 @@
 
   // ───── старт ─────
   (async function start() {
-    log('START', '=== запуск v3.8-solo (один номер, ручной ввод в панели, опрос раз в сек) ===');
+    log('START', '=== запуск v3.8-solo v' + VERSION + ' (один номер, ручной ввод в панели) ===');
     injectStyles();
     addTopButtons();
 
