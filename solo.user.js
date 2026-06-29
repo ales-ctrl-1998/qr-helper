@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.12.0
+// @version      3.12.1
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
@@ -58,7 +58,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.12.0';   // держать в синхроне с @version
+  const VERSION = '3.12.1';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -543,7 +543,7 @@
   }
   let alarmShown = false;
   function sessionAlarm(reason) {
-    setBadge('🔑 сессия: ' + reason + ' — жми «🔑 номер» вверху и поделись');
+    setBadge('🔑 сессия: ' + reason + ' — жми «📱 номер» вверху и поделись');
     if (alarmShown) return;
     alarmShown = true;
     if (inHotWindow()) { beep(); setTimeout(beep, 600); }
@@ -616,7 +616,7 @@
       }
       STATE.dropped = true;          // настоящий недельный кулдаун (будущий ДЕНЬ) — дроп, статус не трогаем
       setBadge('⏳ кулдаун до ' + cd.until);
-      infoDialog('⏳ Номер на кулдауне', 'Следующий код по этому номеру будет доступен с <b>' + escHtml(cd.until) + '</b>.<br><br>Можешь сменить номер кнопкой «✏️ номер» вверху.');
+      infoDialog('⏳ Номер на кулдауне', 'Следующий код по этому номеру будет доступен с <b>' + escHtml(cd.until) + '</b>.<br><br>Можешь сменить номер кнопкой «🚗 номер» вверху.');
       return true;
     }
     return false; // can_create — долбим
@@ -764,15 +764,8 @@
   function addTopButtons() {
     const tools = document.createElement('div'); tools.className = 'fq-tools'; document.body.appendChild(tools);
 
-    const logBtn = document.createElement('button');
-    logBtn.textContent = '💾 лог'; logBtn.className = 'fq-tool'; logBtn.onclick = downloadLog;
-
-    const upBtn = document.createElement('button');
-    upBtn.textContent = '☁️ лог'; upBtn.title = 'Отправить лог на сервер мониторинга'; upBtn.className = 'fq-tool';
-    upBtn.onclick = () => { setBadge('☁️ отправляю лог…'); uploadLog(true); };
-
     const rebind = document.createElement('button');
-    rebind.textContent = '🔑 номер'; rebind.className = 'fq-tool';
+    rebind.textContent = '📱 номер'; rebind.title = 'Поделиться номером телефона в MAX (реавторизация)'; rebind.className = 'fq-tool';
     rebind.onclick = async () => {
       if (manualReauth) return;
       manualReauth = true;
@@ -781,7 +774,7 @@
         await loadMaxScript();
         const w = getWebApp();
         if (!w || typeof w.requestContact !== 'function') {
-          await infoDialog('⚠️ Окно MAX не найдено', 'Миниапп не видит мост MAX. Закрой миниапп и открой заново из бота MAX, потом снова жми «🔑 номер».');
+          await infoDialog('⚠️ Окно MAX не найдено', 'Миниапп не видит мост MAX. Закрой миниапп и открой заново из бота MAX, потом снова жми «📱 номер».');
           return;
         }
         setBadge('🔑 открываю окно MAX — поделись номером…');
@@ -789,7 +782,7 @@
         const ok = await silentReauth(true);
         alarmShown = false; document.title = '';
         await infoDialog(ok ? '✅ Номер привязан' : '⚠️ Реавторизация не прошла',
-          ok ? 'Сессия жива — скрипт продолжает работу.' : 'Номер получен, но сервер не принял сессию. Подожди минуту и нажми «🔑 номер» ещё раз.');
+          ok ? 'Сессия жива — скрипт продолжает работу.' : 'Номер получен, но сервер не принял сессию. Подожди минуту и нажми «📱 номер» ещё раз.');
         if (ok && STATE.running && !STATE.grabbed && !STATE.dropped) schedule(300);
       } catch (e) {
         await infoDialog('⚠️ Не вышло', escHtml(String(e.message || e)) + '<br><br>Если окно «поделиться номером» не появилось — закрой и открой миниапп заново из бота MAX.');
@@ -800,7 +793,7 @@
     codeBtn.textContent = '🎫 код'; codeBtn.className = 'fq-tool'; codeBtn.onclick = () => finalOverlay(true);
 
     const editBtn = document.createElement('button');
-    editBtn.textContent = '✏️ номер'; editBtn.title = 'Сменить номер / топливо'; editBtn.className = 'fq-tool'; editBtn.onclick = openSetup;
+    editBtn.textContent = '🚗 номер'; editBtn.title = 'Сменить номер авто / топливо'; editBtn.className = 'fq-tool'; editBtn.onclick = openSetup;
 
     const tgBtn = document.createElement('button');
     const tgLabel = () => getTgToken() ? '✈️ TG ✓' : '✈️ Telegram';
@@ -817,7 +810,7 @@
       else await infoDialog('⚠️ Нет связи', 'Не удалось проверить код — попробуй позже.');
     };
 
-    tools.appendChild(logBtn); tools.appendChild(upBtn); tools.appendChild(rebind); tools.appendChild(codeBtn); tools.appendChild(editBtn); tools.appendChild(tgBtn);
+    tools.appendChild(rebind); tools.appendChild(codeBtn); tools.appendChild(editBtn); tools.appendChild(tgBtn);
   }
 
   // ───── НАСТРОЙКА: ввод номера ПРЯМО в панели + выбор топлива ─────
@@ -927,7 +920,7 @@
 
   // применить цель и начать слежение
   async function begin() {
-    if (!STATE.plate || !STATE.fuels.length) { setBadge('⛔ номер/топливо не заданы — жми «✏️ номер»'); return; }
+    if (!STATE.plate || !STATE.fuels.length) { setBadge('⛔ номер/топливо не заданы — жми «🚗 номер»'); return; }
     setBadge('▶️ ' + plateShort() + ' · ' + prettyPref(STATE.fuels) + (sessionUp ? ' — слежу за топливом раз в сек' : ' — поднимаю сессию…'));
     if (sessionUp) await initialCheck();
     if (STATE.grabbed) { finalOverlay(); return; }
@@ -950,7 +943,7 @@
     begin();
   }
 
-  // ✏️ сменить номер/топливо: пауза → панель → применить
+  // 🚗 сменить номер авто/топливо: пауза → панель → применить
   let editorOpen = false;
   async function openSetup() {
     if (editorOpen) return;
@@ -1003,7 +996,7 @@
       // авто-старт со старым номером — F5 = мгновенное продолжение
       STATE.plate = savedPlate; STATE.fuels = savedFuels; STATE.confirmed = !PLATE_STD.test(savedPlate);
       log('START', 'АВТО-старт, номер: ' + STATE.plate + ' [' + STATE.fuels.join(',') + ']');
-      setBadge('▶️ ' + plateShort() + ' · ' + prettyPref(STATE.fuels) + ' — поднимаю сессию… (правка — «✏️ номер»)');
+      setBadge('▶️ ' + plateShort() + ' · ' + prettyPref(STATE.fuels) + ' — поднимаю сессию… (правка — «🚗 номер»)');
       await sessionP;
       await begin();
     } else {
@@ -1011,7 +1004,7 @@
       await sessionP;
       const r = await setupUI();
       if (r) applyTarget(r);
-      else setBadge('⛔ номер не задан — жми «✏️ номер» вверху');
+      else setBadge('⛔ номер не задан — жми «🚗 номер» вверху');
     }
     setTimeout(reauthLoop, CONFIG.preflightMs);
   })();
