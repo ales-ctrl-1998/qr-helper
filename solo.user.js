@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.13.1
+// @version      3.13.2
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
@@ -62,7 +62,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.13.1';   // держать в синхроне с @version
+  const VERSION = '3.13.2';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -92,13 +92,20 @@
   }
   // гидратация на старте: поднимаем сохранённое из GM в localStorage, если в этой партиции пусто
   async function hydrateStore() {
-    let restored = 0;
+    let restored = 0, seeded = 0;
     for (const k of PERSIST_KEYS) {
       try {
-        const has = localStorage.getItem(k);
-        if (has != null && has !== '') continue;        // в партиции уже есть — не трогаем
-        const v = await _gmGet(k);
-        if (v != null && v !== '') { try { localStorage.setItem(k, String(v)); restored++; } catch (e) {} }
+        const ls = localStorage.getItem(k);
+        if (ls != null && ls !== '') {
+          // в этой партиции значение ЕСТЬ → засеваем его в GM (чтобы пережило будущий wipe).
+          // важно: ключи, записанные старой версией (только localStorage), так попадут в GM.
+          const gm = await _gmGet(k);
+          if (String(gm == null ? '' : gm) !== ls) { await _gmSet(k, ls); seeded++; }
+        } else {
+          // в партиции ПУСТО (свежая/стёртая) → восстанавливаем из GM
+          const gm = await _gmGet(k);
+          if (gm != null && gm !== '') { try { localStorage.setItem(k, String(gm)); restored++; } catch (e) {} }
+        }
       } catch (e) {}
     }
     // ── ДИАГНОСТИКА GM: живёт ли хранилище менеджера в этом iframe и переживает ли переоткрытие ──
@@ -114,7 +121,7 @@
       rt = (back === probe) ? 'OK' : ('MISMATCH:' + String(back));
     } catch (e) { rt = 'ERR:' + (e && e.message || e); }
     try {
-      log('START', 'гидратация: восстановлено=' + restored + '; ' + types
+      log('START', 'гидратация: восстановлено=' + restored + ', засеяно=' + seeded + '; ' + types
         + '; прошлый_проб=' + (prior == null ? 'НЕТ' : String(prior)) + '; roundtrip=' + rt);
     } catch (e) {}
   }
