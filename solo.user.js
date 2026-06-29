@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.2
+// @version      3.14.3
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -82,7 +82,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.2';   // держать в синхроне с @version
+  const VERSION = '3.14.3';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -187,6 +187,11 @@
 .fq-tool{background:#ffffff!important;color:#1a1f2e!important;
   border:1px solid #c4ccde;border-radius:11px;padding:7px 10px;font:700 12px system-ui,sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(20,30,80,.18);white-space:nowrap}
 .fq-tool:active{transform:scale(.95)}
+.fq-wake{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:100001;
+  border:2px solid #c4ccde;border-radius:24px;padding:12px 22px;font:800 15px system-ui,sans-serif;cursor:pointer;
+  background:#ffffff!important;color:#1a1f2e!important;box-shadow:0 6px 20px rgba(20,30,80,.28);white-space:nowrap}
+.fq-wake.on{background:#eaf9f0!important;border-color:#1f9d57;color:#1f9d57!important}
+.fq-wake:active{transform:translateX(-50%) scale(.96)}
 .fq-badge{position:fixed;top:48px;left:8px;right:8px;z-index:99999;background:#ffffff!important;color:#1a1f2e!important;
   border:1px solid #c4ccde;
   font:700 13px/1.35 system-ui,sans-serif;padding:8px 12px;border-radius:12px;box-shadow:0 6px 20px rgba(20,30,80,.2);word-break:break-word}
@@ -883,8 +888,8 @@
   function _wakeSupported() { try { return !!(navigator.wakeLock && navigator.wakeLock.request); } catch (e) { return false; } }
   function updateWakeBtn() {
     if (!_wakeBtn) return;
-    _wakeBtn.textContent = _wakeLock ? '☀️ не гаснет' : (_wakeWanted ? '☀️ …' : '🌙 экран');
-    _wakeBtn.style.borderColor = _wakeLock ? '#1f9d57' : '#c4ccde';
+    _wakeBtn.textContent = _wakeLock ? '☀️ Экран не гаснет' : (_wakeWanted ? '☀️ Удерживаю экран — тапни' : '🌙 Не давать гаснуть');
+    _wakeBtn.classList.toggle('on', !!_wakeLock);
   }
   async function acquireWake() {
     _wakeWanted = true; updateWakeBtn();
@@ -908,11 +913,11 @@
     const tools = document.createElement('div'); tools.className = 'fq-tools'; document.body.appendChild(tools);
 
     _wakeBtn = document.createElement('button');
-    _wakeBtn.className = 'fq-tool';
+    _wakeBtn.className = 'fq-wake';
     _wakeBtn.title = 'Не давать экрану гаснуть (чтобы скрипт не уснул в раздачу)';
     _wakeBtn.onclick = async () => {
-      if (_wakeLock || _wakeWanted) { releaseWake(); return; }
-      const ok = await acquireWake();
+      if (_wakeLock) { releaseWake(); return; }   // уже держим — тап выключает
+      const ok = await acquireWake();             // ещё нет — этот тап (жест) включает
       if (!ok && !_wakeSupported()) {
         await infoDialog('☀️ Экран блокируется', 'Твой браузер не умеет держать экран сам. Поставь вручную:<br><br>'
           + '<b>Настройки → Экран и яркость → Автоблокировка → Никогда</b> (на время раздачи).<br><br>'
@@ -967,7 +972,8 @@
       else await infoDialog('⚠️ Нет связи', 'Не удалось проверить код — попробуй позже.');
     };
 
-    tools.appendChild(_wakeBtn); tools.appendChild(rebind); tools.appendChild(codeBtn); tools.appendChild(editBtn); tools.appendChild(tgBtn);
+    document.body.appendChild(_wakeBtn);   // отдельная плашка ВНИЗУ экрана (в верхний тулбар не лезла)
+    tools.appendChild(rebind); tools.appendChild(codeBtn); tools.appendChild(editBtn); tools.appendChild(tgBtn);
   }
 
   // ───── НАСТРОЙКА: ввод номера ПРЯМО в панели + выбор топлива ─────
