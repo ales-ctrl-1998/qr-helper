@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.11.6
+// @version      3.12.0
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
@@ -58,7 +58,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.11.6';   // держать в синхроне с @version
+  const VERSION = '3.12.0';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -322,6 +322,7 @@
       if (res && res.ok) { log('TG', 'код подтверждён, владение получено'); if (entered) tgNotify({ kind: 'bind' }); return { token, sid, latest: res.latest, update_url: res.update_url }; }
       const reason = (res && res.reason) || 'offline';
       if (reason === 'unknown') { setTgToken(''); const t = await tgGateUI('❌ Код не найден. Открой бота «Заправыч» → /start, скопируй СВОЙ код и введи снова.'); setTgToken(t); entered = true; continue; }
+      if (reason === 'suspended') { setBadge('🚫 доступ приостановлен'); const t = await tgGateUI('🚫 Доступ приостановлен. Обратись к тому, кто выдал тебе код. После возобновления нажми «Подключить».', token); setTgToken(t); continue; }
       if (reason === 'busy') { const t = await tgGateUI('⛔ Этот код уже работает в ДРУГОМ браузере. Один Telegram — один скрипт. Закрой тот браузер или введи другой код.', ''); setTgToken(t); entered = true; continue; }
       await tgGateUI('⚠️ Нет связи с сервером привязки. Проверь интернет и нажми «Подключить» ещё раз.', token); continue;
     }
@@ -335,10 +336,11 @@
         await new Promise((r) => setTimeout(r, 15000));
         const token = getTgToken(); if (!token) continue;
         const res = await tgHeartbeatReq(token, sid);
-        if (res && res.ok === false && (res.reason === 'busy' || res.reason === 'unknown')) {
+        if (res && res.ok === false && (res.reason === 'busy' || res.reason === 'unknown' || res.reason === 'suspended')) {
           log('TG', 'heartbeat ' + res.reason + ' — стоп');
           STATE.running = false; STATE.paused = true; grabGen++; clearTimeout(STATE.timer); STATE.busy = false;
           if (res.reason === 'unknown') { setTgToken(''); setBadge('⛔ код недействителен — введи новый'); }
+          else if (res.reason === 'suspended') setBadge('🚫 доступ приостановлен');
           else setBadge('⛔ код перехвачен другим браузером');
           await tgEnsureClaim();   // покажет окно: «не найден»/«занят» → ввод кода
           STATE.paused = false;
@@ -810,6 +812,7 @@
       tgBtn.textContent = tgLabel();
       if (res && res.ok) { tgNotify({ kind: 'bind' }); await infoDialog('✈️ Telegram привязан', 'Код подтверждён — QR будет приходить тебе в бота.'); }
       else if (res && res.reason === 'unknown') await infoDialog('❌ Код не найден', 'Проверь код в боте «Заправыч» (/start).');
+      else if (res && res.reason === 'suspended') await infoDialog('🚫 Доступ приостановлен', 'Обратись к тому, кто выдал тебе код.');
       else if (res && res.reason === 'busy') await infoDialog('⛔ Код занят', 'Этот код уже работает в другом браузере.');
       else await infoDialog('⚠️ Нет связи', 'Не удалось проверить код — попробуй позже.');
     };
