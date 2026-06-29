@@ -85,9 +85,9 @@
 
   <!-- код привязки из ?tg= -->
   <div class="card hidden" id="tgcard" style="background:#eaf3ff;border-color:#bcd6ff">
-    <div style="font-weight:700;margin-bottom:4px">✈️ Твой код привязки к боту</div>
+    <div style="font-weight:700;margin-bottom:4px">🔑 Твой код доступа</div>
     <div style="font:700 22px ui-monospace,Menlo,monospace;letter-spacing:1px" id="tgcode"></div>
-    <div style="font-size:13px;color:#3a4a66;margin-top:6px">После установки открой миниапп → в панели скрипта нажми <b>«✈️ Telegram»</b> и вставь этот код. Тогда QR будет приходить тебе в Telegram.</div>
+    <div style="font-size:13px;color:#3a4a66;margin-top:6px">Это твой ключ: им ты <b>входишь в бота</b>, проходишь <b>верификацию в скрипте</b> (шаг 11) и получаешь <b>QR в Telegram</b>. Нажми на код выше — он скопируется.</div>
   </div>
 
   <!-- ВЫБОР ПЛАТФОРМЫ -->
@@ -181,7 +181,7 @@
 
     <div class="card step">
       <p class="step-h"><span class="stepnum">11</span> Верификация</p>
-      <p class="desc">При первом заходе скрипт запросит <b>код верификации</b>. Введи свой код <b id="vcode">(показан вверху этой страницы или в боте «Заправыч»)</b> и нажми <b>«Подключить»</b>.</p>
+      <p class="desc">При первом заходе скрипт запросит <b>код верификации</b>. Введи свой код <span id="vcode">(показан вверху этой страницы или в боте «Заправыч»)</span> и нажми <b>«Подключить»</b>.</p>
       <img class="shot-img" src="scr5/3.jpg" alt="Ввод кода верификации" loading="lazy">
     </div>
 
@@ -300,7 +300,18 @@
   // код привязки из ?tg=
   try {
     var tg=(new URLSearchParams(location.search).get('tg')||'').replace(/[^a-zA-Z0-9]/g,'');
-    if(tg){ document.getElementById('tgcode').textContent=tg; document.getElementById('tgcard').classList.remove('hidden'); var v=document.getElementById('vcode'); if(v) v.textContent=tg; }
+    if(tg){
+      var tc=document.getElementById('tgcode');
+      tc.textContent=tg; tc.classList.add('copyable'); tc.style.cursor='pointer';
+      tc.onclick=function(){ window.copyClip(tg, tc); };
+      document.getElementById('tgcard').classList.remove('hidden');
+      var v=document.getElementById('vcode');
+      if(v){
+        v.textContent=tg; v.className='copyable';
+        v.style.cssText='background:#eef2fb;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-family:ui-monospace,Menlo,monospace;cursor:pointer';
+        v.onclick=function(){ window.copyClip(tg, v); };
+      }
+    }
   } catch(e){}
 
   // выбор платформы
