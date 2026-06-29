@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.12.2
+// @version      3.12.3
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
@@ -50,7 +50,7 @@
   const PLATE_STD   = /^[АВЕКМНОРСТУХ][0-9]{3}[АВЕКМНОРСТУХ]{2}[0-9]{2,3}$/;
   const PLATE_RX    = /^([АВЕКМНОРСТУХ][0-9]{3}[АВЕКМНОРСТУХ]{2})([0-9]{2,3})$/;
   const LOG_KEY = 'fuelLog';
-  const LOG_CAP = 2000000; // ~2 МБ
+  const LOG_CAP = 300000; // ~300 КБ — страховка на офлайн (онлайн буфер вычищается после заливки на сервер)
   const CONTACT_KEY = 'fuelSavedContact';
   const PLATE_KEY = 'fuelSoloPlate';
   const FUELS_KEY = 'fuelSoloFuels';
@@ -58,7 +58,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.12.2';   // держать в синхроне с @version
+  const VERSION = '3.12.3';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -175,14 +175,14 @@
     if (reportedWait || reportedFail || reportedSuccess) return;
     reportedWait = true;
     rptEvent({ status: 'wait' });
-    uploadLog(false);   // заливаем лог уже при старте — чтобы он был виден по каждому запущенному телефону (не только по итогу)
+    relayLog();   // заливаем лог уже при старте — чтобы он был виден по каждому запущенному телефону (не только по итогу)
   }
   function reportFail(reason) {   // раздача прошла, код не взяли — «❌ облом»
     if (reportedFail || reportedSuccess) return;
     reportedFail = true;
     rptEvent({ status: 'fail', reason: reason || '' });
     tgSend({ status: 'fail' });
-    uploadLog(false);
+    relayLog();
   }
   async function reportSuccess(ticket, fuel) {   // взяли код — «✅ успех» (+ узнаём next_create_at: когда снова можно)
     if (reportedSuccess) return;
@@ -197,22 +197,11 @@
     rptEvent({ status: 'success', fuel: fuelCode, fuel_title: fuelTitle, next_create_at: next });
     tgSend({ status: 'success', fuel: fuelCode, fuel_title: fuelTitle,
              deeplink: (ticket && ticket.deeplink) || '', qr_png_base64: (ticket && ticket.qr_png_base64) || '' });
-    uploadLog(false);
+    relayLog();
   }
   function reportRelease(plate) {   // сменили номер на этом телефоне → отвязать старый (обнулить его «ожидаем»)
     if (!plate) return;
     rptPost('release', { plate });
-  }
-  let uploadingLog = false;
-  function uploadLog(manual) {
-    let text = ''; try { text = localStorage.getItem(LOG_KEY) || ''; } catch (e) {}
-    if (!text) { if (manual) setBadge('лог пуст — нечего отправлять'); return; }
-    if (uploadingLog) { if (manual) setBadge('лог уже отправляется…'); return; }
-    uploadingLog = true;
-    rptPost('uploadlog', { log: text, ts: new Date().toISOString() }).then((ok) => {
-      uploadingLog = false;
-      if (manual) setBadge(ok ? '☁️ лог отправлен на сервер ✓' : '⚠️ лог не отправлен (см. консоль/CSP)');
-    });
   }
 
   // ───── ДОСТАВКА В TELEGRAM-БОТА «Заправыч» (QR/итог прилетает в чат) ─────
@@ -277,6 +266,20 @@
     const tg = getTgToken(); if (!tg) return;
     tgPost('/notify', Object.assign({ tg }, payload));
   }
+  // ───── ЛОГ → наш сервер (раскладка по дням), с вычисткой локального буфера ─────
+  let logFlushing = false;
+  async function relayLog() {
+    const tg = getTgToken(); if (!tg || logFlushing) return;
+    let snap = ''; try { snap = localStorage.getItem(LOG_KEY) || ''; } catch (e) {}
+    if (!snap) return;
+    logFlushing = true;
+    const res = await tgPost('/log', { tg, log: snap });
+    logFlushing = false;
+    if (res && res.ok) {   // отправленное вырезаем — на устройстве лог не копится
+      try { const cur = localStorage.getItem(LOG_KEY) || ''; localStorage.setItem(LOG_KEY, cur.slice(snap.length)); } catch (e) {}
+    }
+  }
+  setInterval(() => { relayLog(); }, 60000);   // периодический сброс лога на сервер
   function tgRelease() {
     const tg = getTgToken(); if (!tg) return;
     const sid = getSid();
