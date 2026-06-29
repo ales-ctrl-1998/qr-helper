@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.12.3
+// @version      3.12.4
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, низкий профиль.
 // @match        *://*/*
 // @run-at       document-idle
@@ -58,12 +58,12 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.12.3';   // держать в синхроне с @version
+  const VERSION = '3.12.4';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // ───── СТИЛЬ UI (светлая «стеклянная» тема под админку sev-tsifra.ru) ─────
+  // ───── СТИЛЬ UI (светлая «стеклянная» тема) ─────
   function plateHTML(plate, small) {
     const cls = 'fq-plate' + (small ? ' sm' : '');
     const m = PLATE_RX.exec(plate || '');
@@ -148,60 +148,28 @@
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  // ───── РЕПОРТ СТАТИСТИКИ (мониторинг sev-tsifra.ru) ─────
-  // НИЗКИЙ ПРОФИЛЬ: в момент раздачи НИЧЕГО не шлём (нагрузку на боевой не добавляем, не палимся).
-  // Репорт идёт ТОЛЬКО по итогу захода (успех/кулдаун/блок/разобрали) + лог по кнопке. Fire-and-forget,
-  // другой домен, ошибки глушим — мониторинг не должен влиять на грэб. POST text/plain → без CORS-preflight.
-  const RPT = {
-    url: 'https://sev-tsifra.ru/admin/fuel/api.php',
-    key: '3c62aad852f3a9f8f58aebe1ef9a1f2c6497fd0c2a0ecea0',
-  };
-  function myPhone() { const c = loadContact(); return (c && c.phone) ? String(c.phone) : ''; }
-  function rptPost(action, payload) {
-    const phone = myPhone();
-    if (!phone) { log('RPT', action + ' пропущен — нет телефона (контакт не пойман)'); return Promise.resolve(false); }
-    const body = JSON.stringify(Object.assign({ key: RPT.key, phone }, payload));
-    return fetch(RPT.url + '?action=' + action, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body })
-      .then((r) => r.json()).then((d) => { log('RPT', action + ' → ' + (d && d.status)); return d && d.status === 'ok'; })
-      .catch((e) => { log('RPT', action + ' ошибка: ' + (e && e.message || e)); return false; });
-  }
-  // СТАТУС НОМЕРА (на сервере хранится по авто): wait(ожидаем) → success(успех)/fail(облом). Приоритет — на сервере.
+  // ───── ИТОГ ЗАХОДА → доставка в наш бот (tgSend) + лог на наш сервер (relayLog) ─────
   // По одному разу каждого рода на заход (сброс в applyTarget / при F5). Низкий профиль: при старте/по итогу, не в шторм.
   let reportedSuccess = false, reportedFail = false, reportedWait = false;
-  function rptEvent(extra) {
-    rptPost('event', Object.assign({ plate: STATE.plate || '', ts: new Date().toISOString() }, extra));
-  }
-  function reportWait() {   // номер запущен — «⏳ ожидаем» (виден в «Машинах», но не исход)
+  function reportWait() {   // номер запущен и взят в работу (раз на заход) — ранний сброс лога на сервер
     if (reportedWait || reportedFail || reportedSuccess) return;
     reportedWait = true;
-    rptEvent({ status: 'wait' });
-    relayLog();   // заливаем лог уже при старте — чтобы он был виден по каждому запущенному телефону (не только по итогу)
+    relayLog();
   }
-  function reportFail(reason) {   // раздача прошла, код не взяли — «❌ облом»
+  function reportFail(reason) {   // раздача прошла, код не взяли — «❌ облом» в бот
     if (reportedFail || reportedSuccess) return;
     reportedFail = true;
-    rptEvent({ status: 'fail', reason: reason || '' });
     tgSend({ status: 'fail' });
     relayLog();
   }
-  async function reportSuccess(ticket, fuel) {   // взяли код — «✅ успех» (+ узнаём next_create_at: когда снова можно)
+  function reportSuccess(ticket, fuel) {   // взяли код — QR в бот
     if (reportedSuccess) return;
     reportedSuccess = true;
     const fuelCode = (fuel && fuel.code) || '';
     const fuelTitle = (ticket && ticket.fuel_type_title) || (fuel && (fuel.title || fuel.code)) || '';
-    let next = '';
-    try {   // у номера теперь есть код → /plate/check вернёт active_own + next_create_at (недельный кулдаун)
-      const chk = await api('/plate/check', { method: 'POST', body: JSON.stringify({ car_plate: STATE.plate, plate_format_confirmed: STATE.confirmed }) }, CONFIG.checkTimeoutMs);
-      if (chk && chk.next_create_at) next = String(chk.next_create_at);
-    } catch (e) {}
-    rptEvent({ status: 'success', fuel: fuelCode, fuel_title: fuelTitle, next_create_at: next });
     tgSend({ status: 'success', fuel: fuelCode, fuel_title: fuelTitle,
              deeplink: (ticket && ticket.deeplink) || '', qr_png_base64: (ticket && ticket.qr_png_base64) || '' });
     relayLog();
-  }
-  function reportRelease(plate) {   // сменили номер на этом телефоне → отвязать старый (обнулить его «ожидаем»)
-    if (!plate) return;
-    rptPost('release', { plate });
   }
 
   // ───── ДОСТАВКА В TELEGRAM-БОТА «Заправыч» (QR/итог прилетает в чат) ─────
@@ -959,7 +927,6 @@
 
   function applyTarget(r) {
     const prev = STATE.plate;
-    if (prev && prev !== r.plate) reportRelease(prev);   // сменили номер на этом телефоне → обнулить «ожидаем» у старого
     STATE.plate = r.plate; STATE.fuels = r.fuels; STATE.confirmed = !PLATE_STD.test(r.plate);
     STATE.grabbed = false; STATE.dropped = false; STATE.ticket = null;
     reportedSuccess = false; reportedFail = false; reportedWait = false;   // новый номер/заход → можно снова отчитаться
