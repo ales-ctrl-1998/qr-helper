@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.4
+// @version      3.14.5
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -104,7 +104,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.4';   // держать в синхроне с @version
+  const VERSION = '3.14.5';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -231,6 +231,11 @@
   let _lastPrearmReauth = 0;   // когда последний раз форсили реавторизацию в pre-arm
   let maxDataStale = false;    // 🔴 /session/max вернул «Данные MAX устарели» → лечит ТОЛЬКО переоткрытие
   let _staleAlarmAt = 0;
+  // 🍪 iOS-ФИКС: сервер авторизует кукой fuel_qr_session, значение = session_token из тела /session/max.
+  // Safari ITP в стороннем credentialless-iframe НЕ хранит серверную куку (ставится без SameSite=None)
+  // → следующий /create = 401 (провал всех мобилок 29.06 и 01.07). Ставим куку САМИ с корректными
+  // атрибутами (на десктопе безвредно — то же значение). Токен НЕ привязан к IP (проверено curl).
+  let sessTok = null, cookieSelfTested = false;
 
   const sleep  = (ms) => new Promise((r) => setTimeout(r, ms));
   const jitter = (ms) => ms + Math.floor(Math.random() * ms * 0.3);
@@ -503,6 +508,14 @@
     if (!c || !c.phone) throw new Error('контакт не получен');
     saveContact(c); return c;
   }
+  // ставим куку сессии сами (лечит iOS Safari, где серверная кука не прилипает)
+  function applySessionCookie(tok) {
+    if (!tok) return;
+    sessTok = tok;
+    // Partitioned/SameSite=None — чтобы Safari хранил и слал куку в стороннем iframe.
+    // Неизвестные атрибуты браузер игнорит (куку всё равно ставит), поэтому один set безопасен везде.
+    try { document.cookie = 'fuel_qr_session=' + tok + '; path=/; Secure; SameSite=None; Partitioned'; } catch (e) {}
+  }
   let reauthInflight = null;
   function silentReauth(force) {
     if (reauthInflight && !force) return reauthInflight;
@@ -513,8 +526,17 @@
       try {
         const d = await api('/session/max', { method: 'POST', body: JSON.stringify({
           client_id: clientId(), init_data: w.initData, contact: c, platform: w.platform, version: w.version }) }, CONFIG.reauthTimeoutMs);
+        const tok = d && (d.session_token || d.token);
+        applySessionCookie(tok);   // 🍪 ставим куку сами (iOS-фикс)
         everAuthed = true; sessionDead = false; maxDataStale = false;
-        log('SESSION', 'тихая реавторизация ok, ttl ' + (d && d.ttl));
+        log('SESSION', 'тихая реавторизация ok, ttl ' + (d && d.ttl) + (tok ? ' [кука выставлена]' : ' [БЕЗ токена]'));
+        // САМОТЕСТ (раз за загрузку): проверяем, что по нашей куке сервер узнаёт сессию (на iOS = вердикт «прилипла ли»).
+        if (tok && !cookieSelfTested) {
+          cookieSelfTested = true;
+          api('/session/status', {}, 3000)
+            .then((s) => log('IOSFIX', 'самотест куки: OK active=' + (s && s.active) + ' ttl=' + (s && s.ttl)))
+            .catch((e) => log('IOSFIX', 'самотест куки НЕ ок (кука не прилипла?): ' + (e && (e.message || e))));
+        }
         return true;
       } catch (e) {
         const msg = String(e.message || e);
