@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.6
+// @version      3.14.7
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -30,6 +30,7 @@
     createTimeoutMs: 9000,    // таймаут на прочие POST
     createHotMs: 3000,        // таймаут /create в грэбе: 504-перегруз обрываем быстро → больше выстрелов (успех приходит <2с)
     retryDelayMs: 150,        // пауза между попытками /create (джиттер сверху) — долбим часто
+    backoff429Ms: 900,        // 🔴 откат при 429 (rate-limit за долбёж): НЕ лупить в стену, дать остыть → поздний выстрел зайдёт (05.07 двое утонули в 429×35)
     stockRefreshMs: 1500,     // как часто обновляем остатки во время грэба
     grabMaxMs: 4 * 60 * 1000, // сколько максимум пробуем за один заход
     workers: 5,               // /create-воркеров (баланс: ~6 одновременных соединений на хост — оставляем слот молоту)
@@ -104,7 +105,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.6';   // держать в синхроне с @version
+  const VERSION = '3.14.7';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -588,7 +589,12 @@
       if (res.status === 401 || (res.status === 403 && json.message && json.message.indexOf('Сесси') >= 0)) {
         const e = new Error(json.message || 'сессия истекла'); e.sessionExpired = true; throw e;
       }
-      if (!res.ok || json.status !== 'ok') throw new Error(json.message || ('ошибка сервера (' + res.status + ')'));
+      if (!res.ok || json.status !== 'ok') {
+        const e = new Error(json.message || ('ошибка сервера (' + res.status + ')'));
+        e.httpStatus = res.status;
+        if (res.status === 429) e.rateLimited = true;   // 429 = наш rate-limit за долбёж (не 5xx-перегрузка)
+        throw e;
+      }
       return json.data || {};
     } catch (e) {
       if (!responded) log('ERR', method + ' ' + path + ' (' + (Date.now() - t0) + 'мс): ' + (e.name === 'AbortError' ? 'ТАЙМАУТ' : String(e.message || e)));
@@ -840,6 +846,7 @@
           markGrabbed(cr.ticket || cr, f, (cr.ticket || cr).reused);
           return;
         } catch (e) {
+          if (e.rateLimited) { await sleep(jitter(CONFIG.backoff429Ms)); continue; }   // 🔴 429 — не лупим в стену, даём остыть
           // не ждём реавторизацию (её крутит reauthHammer параллельно) — короткая пауза и снова в бой
           await sleep(jitter(CONFIG.retryDelayMs));
         }
