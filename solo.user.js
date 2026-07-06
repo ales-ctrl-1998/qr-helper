@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.7
+// @version      3.14.9
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -105,7 +105,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.7';   // держать в синхроне с @version
+  const VERSION = '3.14.9';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -262,6 +262,7 @@
   // ───── ИТОГ ЗАХОДА → доставка в наш бот (tgSend) + лог на наш сервер (relayLog) ─────
   // По одному разу каждого рода на заход (сброс в applyTarget / при F5). Низкий профиль: при старте/по итогу, не в шторм.
   let reportedSuccess = false, reportedFail = false, reportedWait = false;
+  let _qrDelivered = false, _qrLite = null;   // beacon-подстраховка доставки QR (лёгкий payload без PNG)
   function reportWait() {   // номер запущен и взят в работу (раз на заход) — ранний сброс лога на сервер
     if (reportedWait || reportedFail || reportedSuccess) return;
     reportedWait = true;
@@ -278,8 +279,9 @@
     reportedSuccess = true;
     const fuelCode = (fuel && fuel.code) || '';
     const fuelTitle = (ticket && ticket.fuel_type_title) || (fuel && (fuel.title || fuel.code)) || '';
-    tgSend({ status: 'success', fuel: fuelCode, fuel_title: fuelTitle,
-             deeplink: (ticket && ticket.deeplink) || '', qr_png_base64: (ticket && ticket.qr_png_base64) || '' });
+    // лёгкий payload (без PNG) для beacon-подстраховки — влезает в лимит sendBeacon, бот отдаст по deeplink
+    _qrLite = { status: 'success', fuel: fuelCode, fuel_title: fuelTitle, deeplink: (ticket && ticket.deeplink) || '' };
+    tgSend(Object.assign({}, _qrLite, { qr_png_base64: (ticket && ticket.qr_png_base64) || '' }));
     relayLog();
   }
 
@@ -311,7 +313,7 @@
     if (!base) { log('TG', 'нет адреса relay — доставка пропущена'); return; }
     const body = JSON.stringify(Object.assign({ tg, plate: STATE.plate || '', ts: new Date().toISOString() }, payload));
     fetch(base + '/e', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body })
-      .then((r) => r.json()).then((d) => log('TG', 'доставка → ' + (d && d.ok ? 'ok' : 'fail')))
+      .then((r) => r.json()).then((d) => { if (d && d.ok && payload && payload.status === 'success') _qrDelivered = true; log('TG', 'доставка → ' + (d && d.ok ? 'ok' : 'fail')); })
       .catch((e) => log('TG', 'доставка ошибка: ' + (e && e.message || e)));
   }
 
@@ -359,6 +361,34 @@
     }
   }
   setInterval(() => { relayLog(); }, 60000);   // периодический сброс лога на сервер
+  // 🛟 НАДЁЖНАЯ выгрузка лога через sendBeacon — переживает закрытие/сворачивание вкладки (в отличие от fetch,
+  // который iOS убивает при уходе в фон сразу после грэба → лог 22:05 не долетал: В704МА92/Миранда/Илья-офис).
+  // Зовём на успехе и при hidden/pagehide. sendBeacon не читает ответ (буфер не вычищаем — сервер дописывает,
+  // дубли в дневном файле безвредны; обычный relayLog при нормальной работе продолжает чистить буфер).
+  function relayLogBeacon() {
+    try {
+      const tg = getTgToken(); if (!tg || !navigator.sendBeacon) return;
+      let snap = ''; try { snap = localStorage.getItem(LOG_KEY) || ''; } catch (e) {}
+      if (!snap) return;
+      if (snap.length > 60000) snap = snap.slice(-60000);   // sendBeacon лимит ~64КБ → шлём последние строки (в них грэб)
+      let base = _relayBase; if (!base) { try { base = localStorage.getItem(TG_BASE_KEY) || ''; } catch (e) {} }
+      if (!base) return;
+      navigator.sendBeacon(base + '/log', JSON.stringify({ tg, log: snap }));
+    } catch (e) {}
+  }
+  // 🛟 beacon-подстраховка доставки QR: шлём ТОЛЬКО если код взят и обычный fetch НЕ подтвердил доставку
+  // (иначе задвоился бы QR в боте). Лёгкий payload (deeplink, без PNG) — бот отдаст ссылку «Открыть QR».
+  function tgSendBeacon() {
+    try {
+      if (!reportedSuccess || _qrDelivered || !_qrLite) return;
+      const tg = getTgToken(); if (!tg || !navigator.sendBeacon) return;
+      let base = _relayBase; if (!base) { try { base = localStorage.getItem(TG_BASE_KEY) || ''; } catch (e) {} }
+      if (!base) return;
+      const body = JSON.stringify(Object.assign({ tg, plate: STATE.plate || '', ts: new Date().toISOString() }, _qrLite));
+      if (navigator.sendBeacon(base + '/e', body)) _qrDelivered = true;   // помечаем, чтобы не слать повторно
+    } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { relayLogBeacon(); tgSendBeacon(); } });
   function tgRelease() {
     const tg = getTgToken(); if (!tg) return;
     const sid = getSid();
@@ -873,6 +903,7 @@
     document.title = '✅ QR ГОТОВ';
     setBadge('✅ QR получен: ' + ((ticket && ticket.fuel_type_title) || (fuel && (fuel.title || fuel.code)) || ''));
     reportSuccess(ticket, fuel);   // статус «успех» + узнаём next_create_at (когда снова можно)
+    relayLogBeacon();              // 🛟 сразу дублируем лог beacon'ом — переживёт закрытие вкладки после кода
   }
 
   // ───── индикатор / сигнал / оверлеи ─────
@@ -1225,8 +1256,8 @@
               + '<br><br><span class="fq-sub">или ссылкой: ' + escHtml(url) + '</span>'
               : 'Спроси ссылку у того, кто дал бота.'));
     }
-    window.addEventListener('pagehide', tgRelease);
-    window.addEventListener('beforeunload', tgRelease);
+    window.addEventListener('pagehide', () => { tgSendBeacon(); relayLogBeacon(); tgRelease(); });
+    window.addEventListener('beforeunload', () => { tgSendBeacon(); relayLogBeacon(); tgRelease(); });
 
     const sessionP = (async () => {
       await loadMaxScript();
