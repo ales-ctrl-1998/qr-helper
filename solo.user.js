@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Заправыч
 // @namespace    zapravych
-// @version      3.14.9
+// @version      3.14.10
 // @description  Заправыч — ловит QR на топливо и присылает его тебе в Telegram. Один номер, агрессивный грэб (молот реавторизации + непрерывный /create), персистентность через верхний фрейм MAX.
 // @match        *://*/*
 // @run-at       document-idle
@@ -105,7 +105,7 @@
   const TG_BASE_KEY = 'fuelTgRelayBase'; // кэш адреса relay-туннеля (узнаём из указателя)
   // указатель: маленький файл на GitHub с ЖИВЫМ адресом туннеля (сервер сам его обновляет)
   const TG_POINTER = 'https://raw.githubusercontent.com/ales-ctrl-1998/qr-helper/main/relay.txt';
-  const VERSION = '3.14.9';   // держать в синхроне с @version
+  const VERSION = '3.14.10';   // держать в синхроне с @version
   const FUEL_LABELS = { a95_plus: '95+', a95: '95', a92: '92', a100: '100', dt: 'ДТ', dt_plus: 'ДТ+' };
   const prettyPref = (arr) => (arr || []).map((id) => FUEL_LABELS[id] || id).join(' → ');
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -237,6 +237,7 @@
   // → следующий /create = 401 (провал всех мобилок 29.06 и 01.07). Ставим куку САМИ с корректными
   // атрибутами (на десктопе безвредно — то же значение). Токен НЕ привязан к IP (проверено curl).
   let sessTok = null, cookieSelfTested = false;
+  let cookieRecovering = false, cookieFixShown = false;   // 🍪 gated-фолбэк для старого iOS
 
   const sleep  = (ms) => new Promise((r) => setTimeout(r, ms));
   const jitter = (ms) => ms + Math.floor(Math.random() * ms * 0.3);
@@ -547,6 +548,54 @@
     // Неизвестные атрибуты браузер игнорит (куку всё равно ставит), поэтому один set безопасен везде.
     try { document.cookie = 'fuel_qr_session=' + tok + '; path=/; Secure; SameSite=None; Partitioned'; } catch (e) {}
   }
+  // 🍪 ФОЛБЭК ДЛЯ СТАРОГО iOS — включается ТОЛЬКО когда самотест куки провалился.
+  // На рабочих (новых) айфонах и десктопе сюда НЕ заходим (там самотест = OK), т.е. сломать актуальный iOS нельзя.
+  // Причина провала на старом Safari: он не поддерживает credentialless → iframe становится обычным сторонним →
+  // ITP режет куку (даже нашу document.cookie). Легальный обход — Storage Access API (нужен ОДИН тап юзера).
+  async function iosCookieRecover(tok) {
+    if (cookieRecovering || !tok) return;
+    cookieRecovering = true;
+    try {
+      // (1) дешёвый диагностический ретрай: кука без Partitioned + повтор самотеста
+      try {
+        document.cookie = 'fuel_qr_session=' + tok + '; path=/; Secure; SameSite=None';
+        const s = await api('/session/status', {}, 3000);
+        log('IOSFIX', 'фолбэк без Partitioned: OK active=' + (s && s.active)); return;
+      } catch (e) { log('IOSFIX', 'фолбэк без Partitioned тоже НЕ ок: ' + (e && (e.message || e))); }
+      // (2) Storage Access API — нужен ТАП юзера → показываем кнопку
+      if (typeof document.requestStorageAccess === 'function') showCookieFix(tok);
+      else log('IOSFIX', 'Storage Access API нет — iOS слишком старый, лечится только обновлением устройства');
+    } finally { cookieRecovering = false; }
+  }
+  function showCookieFix(tok) {
+    if (cookieFixShown) return; cookieFixShown = true;
+    const ov = document.createElement('div');
+    ov.id = 'fq-cookiefix';
+    ov.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:100040;background:#b3261e;color:#fff;padding:14px 16px;font:600 15px/1.35 -apple-system,system-ui,sans-serif;box-shadow:0 -4px 20px rgba(0,0,0,.35);text-align:center';
+    ov.innerHTML = '🍪 Твой iOS блокирует куку — без этого код не поймается.<br>Нажми, чтобы разрешить (обязательно):' +
+      '<br><button id="fq-cfbtn" style="margin-top:10px;padding:10px 22px;border:0;border-radius:10px;background:#fff;color:#b3261e;font:700 15px system-ui;cursor:pointer">Разрешить куки</button>' +
+      '<div id="fq-cfhint" style="margin-top:8px;font-weight:400;opacity:.9;font-size:13px"></div>';
+    document.body.appendChild(ov);
+    const hint = ov.querySelector('#fq-cfhint');
+    ov.querySelector('#fq-cfbtn').addEventListener('click', async () => {
+      hint.textContent = 'проверяю…';
+      try {
+        // requestStorageAccess ДОЛЖЕН быть первым await (иначе теряется жест пользователя)
+        await document.requestStorageAccess();
+        log('IOSFIX', 'Storage Access выдан — переставляю куку');
+        applySessionCookie(tok);
+        try { document.cookie = 'fuel_qr_session=' + tok + '; path=/; Secure; SameSite=None'; } catch (e) {}
+        const s = await api('/session/status', {}, 3000);
+        log('IOSFIX', 'после Storage Access самотест: OK active=' + (s && s.active));
+        cookieFixShown = false; ov.remove();
+        silentReauth(true);   // подтолкнуть, чтобы молот сразу работал с живой кукой
+      } catch (e) {
+        log('IOSFIX', 'Storage Access отказ/провал: ' + (e && (e.message || e)));
+        hint.textContent = 'Не вышло. Обнови iOS до последней версии — без этого код на этом айфоне не поймать.';
+        cookieFixShown = false;   // разрешаем повторный тап
+      }
+    });
+  }
   let reauthInflight = null;
   function silentReauth(force) {
     if (reauthInflight && !force) return reauthInflight;
@@ -566,7 +615,7 @@
           cookieSelfTested = true;
           api('/session/status', {}, 3000)
             .then((s) => log('IOSFIX', 'самотест куки: OK active=' + (s && s.active) + ' ttl=' + (s && s.ttl)))
-            .catch((e) => log('IOSFIX', 'самотест куки НЕ ок (кука не прилипла?): ' + (e && (e.message || e))));
+            .catch((e) => { log('IOSFIX', 'самотест куки НЕ ок (кука не прилипла?): ' + (e && (e.message || e))); iosCookieRecover(tok); });
         }
         return true;
       } catch (e) {
